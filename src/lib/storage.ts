@@ -13,6 +13,8 @@ export interface Article {
 
 const ARTICLES_KEY = 'article-reader-articles';
 const LAST_PLAYED_KEY = 'article-reader-last-played';
+const GLOBAL_SPEED_KEY = 'article-reader-global-speed';
+const FONT_SIZE_KEY = 'article-reader-font-size';
 
 export function getArticles(): Article[] {
   try {
@@ -58,9 +60,70 @@ export function createArticle(content: string, title?: string): Article {
     wordCount,
     paragraphIndex: 0,
     sentenceOffset: 0,
-    speed: 1.0,
+    speed: getGlobalSpeed(),
     voiceURI: '',
     lastPlayedAt: 0,
     createdAt: Date.now(),
   };
+}
+
+// Global speed preference
+export function getGlobalSpeed(): number {
+  try {
+    const v = parseFloat(localStorage.getItem(GLOBAL_SPEED_KEY) || '1');
+    return isNaN(v) ? 1 : v;
+  } catch {
+    return 1;
+  }
+}
+
+export function setGlobalSpeed(speed: number) {
+  localStorage.setItem(GLOBAL_SPEED_KEY, speed.toString());
+}
+
+// Font size preference
+export function getFontSize(): number {
+  try {
+    const v = parseInt(localStorage.getItem(FONT_SIZE_KEY) || '16', 10);
+    return isNaN(v) ? 16 : v;
+  } catch {
+    return 16;
+  }
+}
+
+export function setFontSize(size: number) {
+  localStorage.setItem(FONT_SIZE_KEY, size.toString());
+}
+
+// Export all articles as JSON
+export function exportArticles(): string {
+  const data = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    articles: getArticles(),
+  };
+  return JSON.stringify(data, null, 2);
+}
+
+// Import articles from JSON, merging with existing (skip duplicates by id)
+export function importArticles(json: string): { imported: number; skipped: number } {
+  const data = JSON.parse(json);
+  const incoming: Article[] = data.articles || [];
+  const existing = getArticles();
+  const existingIds = new Set(existing.map((a) => a.id));
+
+  let imported = 0;
+  let skipped = 0;
+
+  for (const article of incoming) {
+    if (existingIds.has(article.id)) {
+      skipped++;
+    } else {
+      existing.unshift(article);
+      imported++;
+    }
+  }
+
+  localStorage.setItem(ARTICLES_KEY, JSON.stringify(existing));
+  return { imported, skipped };
 }

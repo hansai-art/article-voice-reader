@@ -1,18 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, SkipBack, SkipForward, Pencil, Check, X } from 'lucide-react';
+import {
+  ArrowLeft, Play, Pause, SkipBack, SkipForward,
+  Pencil, Check, X, Minus, Plus, Timer,
+} from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { getArticle, saveArticle, Article } from '@/lib/storage';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { getArticle, saveArticle, Article, getFontSize, setFontSize as saveFontSize } from '@/lib/storage';
 import { useLanguage } from '@/hooks/useLanguage';
 import { useTTS } from '@/hooks/useTTS';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { estimateReadingTime } from '@/lib/tts';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+const SLEEP_OPTIONS = [0, 15, 30, 45, 60, 90]; // 0 = off
+const FONT_MIN = 14;
+const FONT_MAX = 24;
 
 const PlayerPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +28,10 @@ const PlayerPage = () => {
   const [article, setArticle] = useState<Article | null>(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
+  const [fontSize, setFontSizeState] = useState(() => getFontSize());
+  const [sleepMinutes, setSleepMinutes] = useState(0);
+  const [sleepRemaining, setSleepRemaining] = useState(0);
+  const sleepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const paragraphRefs = useRef<(HTMLDivElement | null)[]>([]);
   const wakeLock = useWakeLock();
 
@@ -46,21 +57,58 @@ const PlayerPage = () => {
     skipForward,
     skipBackward,
     seekToParagraph,
+    pause,
   } = useTTS(article);
 
-  // Wake lock: acquire when playing, release when paused
+  // Wake lock
   useEffect(() => {
-    if (isPlaying) {
-      wakeLock.request();
-    } else {
-      wakeLock.release();
-    }
+    if (isPlaying) wakeLock.request();
+    else wakeLock.release();
   }, [isPlaying, wakeLock]);
+
+  // Auto-pause when navigating away
+  useEffect(() => {
+    return () => {
+      pause();
+    };
+  }, [pause]);
+
+  // Sleep timer
+  const startSleepTimer = useCallback((minutes: number) => {
+    if (sleepTimerRef.current) {
+      clearInterval(sleepTimerRef.current);
+      sleepTimerRef.current = null;
+    }
+    setSleepMinutes(minutes);
+    if (minutes === 0) {
+      setSleepRemaining(0);
+      return;
+    }
+    const endTime = Date.now() + minutes * 60 * 1000;
+    setSleepRemaining(minutes);
+    sleepTimerRef.current = setInterval(() => {
+      const left = Math.ceil((endTime - Date.now()) / 60000);
+      if (left <= 0) {
+        pause();
+        setSleepMinutes(0);
+        setSleepRemaining(0);
+        if (sleepTimerRef.current) clearInterval(sleepTimerRef.current);
+        sleepTimerRef.current = null;
+      } else {
+        setSleepRemaining(left);
+      }
+    }, 10000);
+  }, [pause]);
+
+  useEffect(() => {
+    return () => {
+      if (sleepTimerRef.current) clearInterval(sleepTimerRef.current);
+    };
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't capture when editing title
       if (isEditingTitle) return;
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
@@ -84,13 +132,18 @@ const PlayerPage = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [togglePlay, skipForward, skipBackward, isEditingTitle]);
 
-  // Auto-scroll to active paragraph
+  // Auto-scroll
   useEffect(() => {
     const el = paragraphRefs.current[paragraphIndex];
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [paragraphIndex]);
+
+  // Font size
+  const changeFontSize = (delta: number) => {
+    const next = Math.max(FONT_MIN, Math.min(FONT_MAX, fontSize + delta));
+    setFontSizeState(next);
+    saveFontSize(next);
+  };
 
   // Title editing
   const startEditTitle = () => {
@@ -98,20 +151,16 @@ const PlayerPage = () => {
     setEditTitle(article.title);
     setIsEditingTitle(true);
   };
-
-  const saveTitle = () => {
+  const handleSaveTitle = () => {
     if (!article || !editTitle.trim()) return;
     const updated = { ...article, title: editTitle.trim() };
     saveArticle(updated);
     setArticle(updated);
     setIsEditingTitle(false);
   };
+  const cancelEditTitle = () => setIsEditingTitle(false);
 
-  const cancelEditTitle = () => {
-    setIsEditingTitle(false);
-  };
-
-  // Progress calculations
+  // Progress
   const totalTime = article ? estimateReadingTime(article.wordCount, speed) : 0;
   const elapsedTime = totalTime * (progressPercent / 100);
   const remainingTime = totalTime - elapsedTime;
@@ -125,7 +174,7 @@ const PlayerPage = () => {
   if (!article) return null;
 
   return (
-    <div className="min-h-screen pb-[220px]">
+    <div className="min-h-screen pb-[260px]">
       {/* Header */}
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border px-6 py-4">
         <div className="flex items-center gap-3 max-w-lg mx-auto">
@@ -143,13 +192,13 @@ const PlayerPage = () => {
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') saveTitle();
+                  if (e.key === 'Enter') handleSaveTitle();
                   if (e.key === 'Escape') cancelEditTitle();
                 }}
                 className="h-8 text-sm"
                 autoFocus
               />
-              <Button variant="ghost" size="icon" onClick={saveTitle} className="shrink-0 h-8 w-8">
+              <Button variant="ghost" size="icon" onClick={handleSaveTitle} className="shrink-0 h-8 w-8">
                 <Check className="h-4 w-4" />
               </Button>
               <Button variant="ghost" size="icon" onClick={cancelEditTitle} className="shrink-0 h-8 w-8">
@@ -174,7 +223,7 @@ const PlayerPage = () => {
 
       {/* Article content */}
       <main className="max-w-lg mx-auto px-6 mt-6">
-        <div className="space-y-4 prose-reader text-base leading-relaxed">
+        <div className="space-y-4 prose-reader leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
           {paragraphs.map((para, idx) => (
             <motion.div
               key={idx}
@@ -185,7 +234,6 @@ const PlayerPage = () => {
                   : 'border-l-4 border-transparent hover:bg-muted/50'
               }`}
               onClick={() => seekToParagraph(idx)}
-              animate={idx === paragraphIndex ? { scale: 1 } : { scale: 1 }}
             >
               <p className={idx === paragraphIndex ? 'text-foreground' : 'text-muted-foreground'}>
                 {para}
@@ -209,44 +257,27 @@ const PlayerPage = () => {
             />
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>{formatTime(elapsedTime)}</span>
-              <span className="text-center">{progressPercent}%</span>
+              <span>{t('paragraphCount').replace('{current}', String(paragraphIndex + 1)).replace('{total}', String(paragraphs.length))} · {progressPercent}%</span>
               <span>-{formatTime(remainingTime)}</span>
             </div>
           </div>
 
           {/* Transport controls */}
           <div className="flex items-center justify-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={skipBackward}
-              className="touch-target btn-press"
-            >
+            <Button variant="ghost" size="icon" onClick={skipBackward} className="touch-target btn-press">
               <SkipBack className="h-6 w-6" />
             </Button>
-            <Button
-              onClick={togglePlay}
-              className="h-14 w-14 rounded-full btn-press"
-              size="icon"
-            >
-              {isPlaying ? (
-                <Pause className="h-7 w-7" />
-              ) : (
-                <Play className="h-7 w-7 ml-0.5" />
-              )}
+            <Button onClick={togglePlay} className="h-14 w-14 rounded-full btn-press" size="icon">
+              {isPlaying ? <Pause className="h-7 w-7" /> : <Play className="h-7 w-7 ml-0.5" />}
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={skipForward}
-              className="touch-target btn-press"
-            >
+            <Button variant="ghost" size="icon" onClick={skipForward} className="touch-target btn-press">
               <SkipForward className="h-6 w-6" />
             </Button>
           </div>
 
-          {/* Speed & Voice */}
-          <div className="flex items-center gap-3">
+          {/* Speed, Voice, Font, Sleep */}
+          <div className="flex items-center gap-2">
+            {/* Speed */}
             <div className="flex-1">
               <Select value={speed.toString()} onValueChange={(v) => changeSpeed(parseFloat(v))}>
                 <SelectTrigger className="h-9 text-xs">
@@ -254,13 +285,13 @@ const PlayerPage = () => {
                 </SelectTrigger>
                 <SelectContent>
                   {SPEED_OPTIONS.map((s) => (
-                    <SelectItem key={s} value={s.toString()}>
-                      {s}x
-                    </SelectItem>
+                    <SelectItem key={s} value={s.toString()}>{s}x</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Voice */}
             <div className="flex-1">
               <Select
                 value={selectedVoice?.voiceURI || ''}
@@ -274,19 +305,59 @@ const PlayerPage = () => {
                 </SelectTrigger>
                 <SelectContent>
                   {voices.length === 0 ? (
-                    <SelectItem value="none" disabled>
-                      {t('noVoices')}
-                    </SelectItem>
+                    <SelectItem value="none" disabled>{t('noVoices')}</SelectItem>
                   ) : (
                     voices.map((v) => (
-                      <SelectItem key={v.voiceURI} value={v.voiceURI}>
-                        {v.name}
-                      </SelectItem>
+                      <SelectItem key={v.voiceURI} value={v.voiceURI}>{v.name}</SelectItem>
                     ))
                   )}
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Font size */}
+            <div className="flex items-center gap-0.5">
+              <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => changeFontSize(-1)} disabled={fontSize <= FONT_MIN}>
+                <Minus className="h-3.5 w-3.5" />
+              </Button>
+              <span className="text-xs text-muted-foreground w-4 text-center">{fontSize}</span>
+              <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => changeFontSize(1)} disabled={fontSize >= FONT_MAX}>
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+
+            {/* Sleep timer */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-9 w-9 ${sleepMinutes > 0 ? 'text-accent' : ''}`}
+                >
+                  <Timer className="h-4 w-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 p-2" align="end">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('sleepTimer')}</p>
+                  {SLEEP_OPTIONS.map((m) => (
+                    <Button
+                      key={m}
+                      variant={sleepMinutes === m ? 'secondary' : 'ghost'}
+                      className="w-full justify-start text-sm h-8"
+                      onClick={() => startSleepTimer(m)}
+                    >
+                      {m === 0 ? t('sleepTimerOff') : `${m} ${t('sleepTimerSet')}`}
+                    </Button>
+                  ))}
+                  {sleepRemaining > 0 && (
+                    <p className="text-xs text-accent px-2 pt-1">
+                      {t('sleepTimerActive').replace('{min}', String(sleepRemaining))}
+                    </p>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
       </div>

@@ -1,10 +1,27 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { WebSpeechTTS, splitIntoParagraphs, splitIntoSentences } from '@/lib/tts';
-import { Article, saveArticle, setLastPlayedId } from '@/lib/storage';
+import { Article, saveArticle, setLastPlayedId, getGlobalSpeed, setGlobalSpeed } from '@/lib/storage';
 import { toast } from '@/hooks/use-toast';
 import { t } from '@/lib/i18n';
 
 const MAX_RETRIES = 2;
+
+/** Sort voices: zh-TW first, then zh-CN/zh-HK, then other zh, then rest alphabetically */
+function sortVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice[] {
+  return [...voices].sort((a, b) => {
+    const rank = (v: SpeechSynthesisVoice) => {
+      if (v.lang === 'zh-TW' || v.lang === 'zh_TW') return 0;
+      if (v.lang === 'zh-HK' || v.lang === 'zh_HK') return 1;
+      if (v.lang === 'zh-CN' || v.lang === 'zh_CN') return 2;
+      if (v.lang.startsWith('zh')) return 3;
+      if (v.lang.startsWith('en')) return 4;
+      return 5;
+    };
+    const diff = rank(a) - rank(b);
+    if (diff !== 0) return diff;
+    return a.name.localeCompare(b.name);
+  });
+}
 
 export function useTTS(article: Article | null) {
   const ttsRef = useRef(new WebSpeechTTS());
@@ -13,7 +30,7 @@ export function useTTS(article: Article | null) {
   const [sentenceIndex, setSentenceIndex] = useState(0);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
-  const [speed, setSpeed] = useState(1.0);
+  const [speed, setSpeed] = useState(() => getGlobalSpeed());
   const articleRef = useRef(article);
   const playingRef = useRef(false);
   const retryCountRef = useRef(0);
@@ -26,14 +43,16 @@ export function useTTS(article: Article | null) {
     articleRef.current = article;
   }, [article]);
 
-  // Load voices
+  // Load voices (sorted: zh-TW first)
   useEffect(() => {
     const loadVoices = () => {
-      const v = ttsRef.current.getVoices();
-      setVoices(v);
-      if (!selectedVoice && v.length > 0) {
-        const zh = v.find((voice) => voice.lang.startsWith('zh'));
-        setSelectedVoice(zh || v[0]);
+      const raw = ttsRef.current.getVoices();
+      const sorted = sortVoices(raw);
+      setVoices(sorted);
+      if (!selectedVoice && sorted.length > 0) {
+        const zhTW = sorted.find((v) => v.lang === 'zh-TW' || v.lang === 'zh_TW');
+        const zh = zhTW || sorted.find((v) => v.lang.startsWith('zh'));
+        setSelectedVoice(zh || sorted[0]);
       }
     };
     loadVoices();
@@ -186,6 +205,7 @@ export function useTTS(article: Article | null) {
   const changeSpeed = useCallback(
     (newSpeed: number) => {
       setSpeed(newSpeed);
+      setGlobalSpeed(newSpeed);
       if (isPlaying) {
         ttsRef.current.stop();
       }

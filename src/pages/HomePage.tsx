@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Globe, Trash2, BookOpen, Sun, Moon } from 'lucide-react';
+import { Plus, Globe, Trash2, BookOpen, Sun, Moon, Download, Upload } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -15,9 +15,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { getArticles, deleteArticle, getLastPlayedId, getArticle, Article } from '@/lib/storage';
+import {
+  getArticles, deleteArticle, getLastPlayedId, getArticle,
+  exportArticles, importArticles, Article,
+} from '@/lib/storage';
 import { useLanguage } from '@/hooks/useLanguage';
 import { formatTimeAgo } from '@/lib/i18n';
+import { toast } from '@/hooks/use-toast';
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -26,6 +30,7 @@ const HomePage = () => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [lastPlayedArticle, setLastPlayedArticle] = useState<Article | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setArticles(getArticles());
@@ -47,6 +52,40 @@ const HomePage = () => {
     setTheme(theme === 'dark' ? 'light' : 'dark');
   };
 
+  const handleExport = () => {
+    const articles = getArticles();
+    if (articles.length === 0) {
+      toast({ title: t('noArticlesToExport') });
+      return;
+    }
+    const json = exportArticles();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `voice-reader-articles-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: t('exportSuccess').replace('{count}', String(articles.length)) });
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const { imported, skipped } = importArticles(text);
+      setArticles(getArticles());
+      let msg = t('importSuccess').replace('{count}', String(imported));
+      if (skipped > 0) msg += t('importSkipped').replace('{count}', String(skipped));
+      toast({ title: msg });
+    } catch {
+      toast({ title: t('importError'), variant: 'destructive' });
+    }
+    // Reset input so the same file can be imported again
+    if (importRef.current) importRef.current.value = '';
+  };
+
   const progressOf = (a: Article) => {
     if (!a.content) return 0;
     const paras = a.content.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
@@ -63,24 +102,10 @@ const HomePage = () => {
             <p className="text-xs text-muted-foreground">{t('appSubtitle')}</p>
           </div>
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleTheme}
-              className="touch-target btn-press"
-            >
-              {theme === 'dark' ? (
-                <Sun className="h-5 w-5" />
-              ) : (
-                <Moon className="h-5 w-5" />
-              )}
+            <Button variant="ghost" size="icon" onClick={toggleTheme} className="touch-target btn-press">
+              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleLanguage}
-              className="touch-target btn-press"
-            >
+            <Button variant="ghost" size="icon" onClick={toggleLanguage} className="touch-target btn-press">
               <Globe className="h-5 w-5" />
             </Button>
           </div>
@@ -88,22 +113,39 @@ const HomePage = () => {
       </header>
 
       <main className="max-w-lg mx-auto px-6 mt-4 space-y-4">
-        {/* Add Article button */}
-        <Button
-          className="w-full touch-target btn-press text-base font-semibold gap-2"
-          size="lg"
-          onClick={() => navigate('/add')}
-        >
-          <Plus className="h-5 w-5" />
-          {t('addArticle')}
-        </Button>
+        {/* Action buttons */}
+        <div className="flex gap-2">
+          <Button
+            className="flex-1 touch-target btn-press text-base font-semibold gap-2"
+            size="lg"
+            onClick={() => navigate('/add')}
+          >
+            <Plus className="h-5 w-5" />
+            {t('addArticle')}
+          </Button>
+          <Button variant="outline" size="lg" onClick={handleExport} className="touch-target btn-press px-3">
+            <Download className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={() => importRef.current?.click()}
+            className="touch-target btn-press px-3"
+          >
+            <Upload className="h-5 w-5" />
+          </Button>
+          <input
+            ref={importRef}
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={handleImport}
+          />
+        </div>
 
         {/* Resume Reading banner */}
         {lastPlayedArticle && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
             <Card
               className="p-4 cursor-pointer btn-press border-accent/30 bg-accent/5 hover:bg-accent/10 transition-colors"
               onClick={() => navigate(`/player/${lastPlayedArticle.id}`)}
@@ -114,13 +156,9 @@ const HomePage = () => {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-accent">{t('resumeReading')}</p>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {lastPlayedArticle.title}
-                  </p>
+                  <p className="text-sm text-muted-foreground truncate">{lastPlayedArticle.title}</p>
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  {progressOf(lastPlayedArticle)}%
-                </span>
+                <span className="text-xs text-muted-foreground">{progressOf(lastPlayedArticle)}%</span>
               </div>
             </Card>
           </motion.div>
@@ -176,7 +214,6 @@ const HomePage = () => {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-                  {/* Progress bar */}
                   {article.lastPlayedAt > 0 && (
                     <div className="mt-3 h-1 bg-secondary rounded-full overflow-hidden">
                       <div
@@ -192,7 +229,7 @@ const HomePage = () => {
         )}
       </main>
 
-      {/* Delete confirmation dialog */}
+      {/* Delete confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
