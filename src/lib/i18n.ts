@@ -67,6 +67,10 @@ const translations = {
     importSkipped: '（{count} 篇重複略過）',
     importError: '匯入失敗，請確認檔案格式',
     noArticlesToExport: '沒有文章可以匯出',
+    cleanText: '清理文字',
+    cleanTextHint: '移除多餘空白、網頁元素等雜訊',
+    cleanTextDone: '已清理完成（移除了 {count} 個字元）',
+    cleanTextNoop: '文字已經很乾淨了',
   },
   en: {
     appTitle: 'Voice Reader',
@@ -136,6 +140,10 @@ const translations = {
     importSkipped: ' ({count} duplicates skipped)',
     importError: 'Import failed. Check file format.',
     noArticlesToExport: 'No articles to export',
+    cleanText: 'Clean text',
+    cleanTextHint: 'Remove extra whitespace, web artifacts, etc.',
+    cleanTextDone: 'Cleaned ({count} chars removed)',
+    cleanTextNoop: 'Text is already clean',
   },
 } as const;
 

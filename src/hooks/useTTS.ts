@@ -126,21 +126,31 @@ export function useTTS(article: Article | null) {
           }
         },
         undefined,
-        (error) => {
-          if (error === 'canceled') return;
+        (error, detail) => {
+          // "canceled" and "interrupted" are handled in tts.ts — won't reach here
+          console.error(`[TTS Error] ${detail}`);
           if (retryCountRef.current < MAX_RETRIES) {
             retryCountRef.current++;
-            toast({ title: t('ttsRetrying'), duration: 2000 });
+            toast({
+              title: `${t('ttsRetrying')} (${retryCountRef.current}/${MAX_RETRIES})`,
+              description: `Error: ${error}`,
+              duration: 3000,
+            });
             setTimeout(() => {
               if (playingRef.current) {
                 speakSentence(pIdx, sIdx);
               }
-            }, 500);
+            }, 800);
           } else {
             retryCountRef.current = 0;
             setIsPlaying(false);
             playingRef.current = false;
-            toast({ title: t('ttsError'), variant: 'destructive', duration: 4000 });
+            toast({
+              title: t('ttsError'),
+              description: `Error: ${error} | ${detail}`,
+              variant: 'destructive',
+              duration: 8000,
+            });
           }
         }
       );

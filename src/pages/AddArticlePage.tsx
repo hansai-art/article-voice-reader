@@ -1,12 +1,13 @@
 import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Upload, FileText } from 'lucide-react';
+import { ArrowLeft, Upload, FileText, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useLanguage } from '@/hooks/useLanguage';
 import { createArticle, saveArticle } from '@/lib/storage';
 import { parseFile } from '@/lib/file-parser';
-import { estimateReadingTime } from '@/lib/tts';
+import { estimateReadingTime, cleanText } from '@/lib/tts';
+import { toast } from '@/hooks/use-toast';
 
 const AddArticlePage = () => {
   const navigate = useNavigate();
@@ -45,6 +46,18 @@ const AddArticlePage = () => {
       setLoading(false);
     }
   }, []);
+
+  const handleClean = () => {
+    if (!content.trim()) return;
+    const cleaned = cleanText(content);
+    const diff = content.length - cleaned.length;
+    if (diff > 0) {
+      setContent(cleaned);
+      toast({ title: t('cleanTextDone').replace('{count}', String(diff)), duration: 3000 });
+    } else {
+      toast({ title: t('cleanTextNoop'), duration: 2000 });
+    }
+  };
 
   const handleStart = () => {
     if (!content.trim()) return;
@@ -118,15 +131,26 @@ const AddArticlePage = () => {
           className="min-h-[200px] text-base resize-y prose-reader"
         />
 
-        {/* Stats */}
+        {/* Stats + Clean button */}
         {wordCount > 0 && (
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span>
-              {t('wordCount')}: {wordCount.toLocaleString()} {t('characters')}
-            </span>
-            <span>
-              {t('estimatedTime')}: ~{readTime} {t('minutes')}
-            </span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+              <span>
+                {t('wordCount')}: {wordCount.toLocaleString()} {t('characters')}
+              </span>
+              <span>
+                {t('estimatedTime')}: ~{readTime} {t('minutes')}
+              </span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClean}
+              className="btn-press gap-1.5 text-xs"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              {t('cleanText')}
+            </Button>
           </div>
         )}
 
