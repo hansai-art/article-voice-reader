@@ -1,0 +1,16 @@
+{
+  "name": "Article Voice Reader",
+  "short_name": "朗讀器",
+  "description": "Paste text or upload files and listen to them with text-to-speech",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f5f2",
+  "theme_color": "#3b82f6",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64",
+      "type": "image/x-icon"
+    }
+  ]
+}
