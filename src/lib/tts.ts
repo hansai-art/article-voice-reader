@@ -1,5 +1,12 @@
 export interface TTSEngine {
-  speak(text: string, rate: number, voice: SpeechSynthesisVoice | null, onEnd: () => void, onBoundary?: (charIndex: number) => void): void;
+  speak(
+    text: string,
+    rate: number,
+    voice: SpeechSynthesisVoice | null,
+    onEnd: () => void,
+    onBoundary?: (charIndex: number) => void,
+    onError?: (error: string) => void
+  ): void;
   stop(): void;
   pause(): void;
   resume(): void;
@@ -16,7 +23,6 @@ export function splitIntoParagraphs(text: string): string[] {
 }
 
 export function splitIntoSentences(paragraph: string): string[] {
-  // Split on Chinese and English sentence endings
   const sentences = paragraph.split(/(?<=[。！？.!?])\s*/);
   return sentences.filter((s) => s.trim().length > 0);
 }
@@ -30,7 +36,8 @@ export class WebSpeechTTS implements TTSEngine {
     rate: number,
     voice: SpeechSynthesisVoice | null,
     onEnd: () => void,
-    onBoundary?: (charIndex: number) => void
+    onBoundary?: (charIndex: number) => void,
+    onError?: (error: string) => void
   ) {
     this.stop();
     const utterance = new SpeechSynthesisUtterance(text);
@@ -38,7 +45,11 @@ export class WebSpeechTTS implements TTSEngine {
     if (voice) utterance.voice = voice;
     utterance.onend = () => onEnd();
     utterance.onerror = (e) => {
-      if (e.error !== 'canceled') onEnd();
+      if (onError) {
+        onError(e.error);
+      } else if (e.error !== 'canceled') {
+        onEnd();
+      }
     };
     if (onBoundary) {
       utterance.onboundary = (e) => onBoundary(e.charIndex);
@@ -74,6 +85,5 @@ export class WebSpeechTTS implements TTSEngine {
 }
 
 export function estimateReadingTime(charCount: number, speed: number = 1): number {
-  // ~250 chars/min for Chinese at 1x speed
   return Math.ceil(charCount / (250 * speed));
 }

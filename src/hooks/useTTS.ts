@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { WebSpeechTTS, splitIntoParagraphs, splitIntoSentences } from '@/lib/tts';
 import { Article, saveArticle, setLastPlayedId } from '@/lib/storage';
+import { toast } from '@/hooks/use-toast';
+import { t } from '@/lib/i18n';
+
+const MAX_RETRIES = 2;
 
 export function useTTS(article: Article | null) {
   const ttsRef = useRef(new WebSpeechTTS());
@@ -12,6 +16,7 @@ export function useTTS(article: Article | null) {
   const [speed, setSpeed] = useState(1.0);
   const articleRef = useRef(article);
   const playingRef = useRef(false);
+  const retryCountRef = useRef(0);
 
   const paragraphs = article ? splitIntoParagraphs(article.content) : [];
   const paragraphsRef = useRef(paragraphs);
@@ -27,7 +32,6 @@ export function useTTS(article: Article | null) {
       const v = ttsRef.current.getVoices();
       setVoices(v);
       if (!selectedVoice && v.length > 0) {
-        // Prefer Chinese voice
         const zh = v.find((voice) => voice.lang.startsWith('zh'));
         setSelectedVoice(zh || v[0]);
       }
@@ -74,12 +78,12 @@ export function useTTS(article: Article | null) {
       if (pIdx >= paras.length) {
         setIsPlaying(false);
         playingRef.current = false;
+        retryCountRef.current = 0;
         return;
       }
 
       const sentences = splitIntoSentences(paras[pIdx]);
       if (sIdx >= sentences.length) {
-        // Move to next paragraph
         const nextP = pIdx + 1;
         setParagraphIndex(nextP);
         setSentenceIndex(0);
@@ -92,11 +96,35 @@ export function useTTS(article: Article | null) {
       setSentenceIndex(sIdx);
       saveProgress(pIdx, sIdx);
 
-      ttsRef.current.speak(sentences[sIdx], speed, selectedVoice, () => {
-        if (playingRef.current) {
-          speakSentence(pIdx, sIdx + 1);
+      ttsRef.current.speak(
+        sentences[sIdx],
+        speed,
+        selectedVoice,
+        () => {
+          retryCountRef.current = 0;
+          if (playingRef.current) {
+            speakSentence(pIdx, sIdx + 1);
+          }
+        },
+        undefined,
+        (error) => {
+          if (error === 'canceled') return;
+          if (retryCountRef.current < MAX_RETRIES) {
+            retryCountRef.current++;
+            toast({ title: t('ttsRetrying'), duration: 2000 });
+            setTimeout(() => {
+              if (playingRef.current) {
+                speakSentence(pIdx, sIdx);
+              }
+            }, 500);
+          } else {
+            retryCountRef.current = 0;
+            setIsPlaying(false);
+            playingRef.current = false;
+            toast({ title: t('ttsError'), variant: 'destructive', duration: 4000 });
+          }
         }
-      });
+      );
     },
     [speed, selectedVoice, saveProgress]
   );
@@ -104,6 +132,7 @@ export function useTTS(article: Article | null) {
   const play = useCallback(() => {
     setIsPlaying(true);
     playingRef.current = true;
+    retryCountRef.current = 0;
     speakSentence(paragraphIndex, sentenceIndex);
   }, [paragraphIndex, sentenceIndex, speakSentence]);
 
@@ -159,7 +188,6 @@ export function useTTS(article: Article | null) {
       setSpeed(newSpeed);
       if (isPlaying) {
         ttsRef.current.stop();
-        // Will re-speak with new speed via effect
       }
     },
     [isPlaying]

@@ -1,9 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Globe, Trash2, BookOpen } from 'lucide-react';
+import { Plus, Globe, Trash2, BookOpen, Sun, Moon } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { getArticles, deleteArticle, getLastPlayedId, getArticle, Article } from '@/lib/storage';
 import { useLanguage } from '@/hooks/useLanguage';
 import { formatTimeAgo } from '@/lib/i18n';
@@ -11,8 +22,10 @@ import { formatTimeAgo } from '@/lib/i18n';
 const HomePage = () => {
   const navigate = useNavigate();
   const { lang, toggleLanguage, t } = useLanguage();
+  const { theme, setTheme } = useTheme();
   const [articles, setArticles] = useState<Article[]>([]);
   const [lastPlayedArticle, setLastPlayedArticle] = useState<Article | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   useEffect(() => {
     setArticles(getArticles());
@@ -27,6 +40,11 @@ const HomePage = () => {
     deleteArticle(id);
     setArticles(getArticles());
     if (lastPlayedArticle?.id === id) setLastPlayedArticle(null);
+    setDeleteTarget(null);
+  };
+
+  const toggleTheme = () => {
+    setTheme(theme === 'dark' ? 'light' : 'dark');
   };
 
   const progressOf = (a: Article) => {
@@ -44,14 +62,28 @@ const HomePage = () => {
             <h1 className="text-xl font-bold tracking-tight">{t('appTitle')}</h1>
             <p className="text-xs text-muted-foreground">{t('appSubtitle')}</p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleLanguage}
-            className="touch-target btn-press"
-          >
-            <Globe className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleTheme}
+              className="touch-target btn-press"
+            >
+              {theme === 'dark' ? (
+                <Sun className="h-5 w-5" />
+              ) : (
+                <Moon className="h-5 w-5" />
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleLanguage}
+              className="touch-target btn-press"
+            >
+              <Globe className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -138,7 +170,7 @@ const HomePage = () => {
                       className="shrink-0 text-muted-foreground hover:text-destructive"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleDelete(article.id);
+                        setDeleteTarget(article.id);
                       }}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -159,6 +191,25 @@ const HomePage = () => {
           </AnimatePresence>
         )}
       </main>
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('delete')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('deleteConfirm')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && handleDelete(deleteTarget)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
