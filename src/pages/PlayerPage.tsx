@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward,
   Pencil, Check, X, Minus, Plus, Timer, Eye, EyeOff, Sparkles, Loader2, Download,
+  Volume2, Bot,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -68,6 +69,11 @@ const PlayerPage = () => {
     skipBackward,
     seekToParagraph,
     pause,
+    engineType,
+    switchEngine,
+    openaiVoice,
+    changeOpenAIVoice,
+    openaiVoices,
   } = useTTS(article);
 
   // Wake lock

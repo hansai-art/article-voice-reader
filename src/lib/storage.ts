@@ -117,6 +117,28 @@ export function setApiProvider(provider: ApiProvider) {
   localStorage.setItem(API_PROVIDER_KEY, provider);
 }
 
+// TTS engine preference: 'browser' (Web Speech API) or 'openai' (OpenAI TTS)
+const TTS_ENGINE_KEY = 'article-reader-tts-engine';
+const OPENAI_VOICE_KEY = 'article-reader-openai-voice';
+
+export type TTSEngineType = 'browser' | 'openai';
+
+export function getTTSEngine(): TTSEngineType {
+  return (localStorage.getItem(TTS_ENGINE_KEY) as TTSEngineType) || 'browser';
+}
+
+export function setTTSEngine(engine: TTSEngineType) {
+  localStorage.setItem(TTS_ENGINE_KEY, engine);
+}
+
+export function getOpenAIVoicePref(): string {
+  return localStorage.getItem(OPENAI_VOICE_KEY) || 'nova';
+}
+
+export function setOpenAIVoicePref(voice: string) {
+  localStorage.setItem(OPENAI_VOICE_KEY, voice);
+}
+
 // Export all articles as JSON
 export function exportArticles(): string {
   const data = {

@@ -1,5 +1,3 @@
-import Tesseract from 'tesseract.js';
-
 export interface OcrProgress {
   status: string;
   progress: number;
@@ -7,14 +5,15 @@ export interface OcrProgress {
 
 /**
  * Extract text from an image file using Tesseract.js OCR.
- * Supports: PNG, JPG, JPEG, BMP, WEBP
+ * Tesseract is loaded dynamically to avoid bloating the initial bundle.
  */
 export async function parseImageOCR(
   file: File,
   onProgress?: (p: OcrProgress) => void
 ): Promise<string> {
+  const Tesseract = await import('tesseract.js');
   const result = await Tesseract.recognize(file, 'chi_tra+eng', {
-    logger: (m) => {
+    logger: (m: any) => {
       if (onProgress && m.status && typeof m.progress === 'number') {
         onProgress({ status: m.status, progress: m.progress });
       }

@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { WebSpeechTTS, splitIntoParagraphs, splitIntoSentences } from '@/lib/tts';
-import { Article, saveArticle, setLastPlayedId, getGlobalSpeed, setGlobalSpeed } from '@/lib/storage';
+import {
+  WebSpeechTTS, OpenAITTS, splitIntoParagraphs, splitIntoSentences,
+  TTSEngine, OpenAIVoice, getOpenAIVoices,
+} from '@/lib/tts';
+import {
+  Article, saveArticle, setLastPlayedId, getGlobalSpeed, setGlobalSpeed,
+  getApiKey, getApiProvider, getTTSEngine, setTTSEngine, TTSEngineType,
+  getOpenAIVoicePref, setOpenAIVoicePref,
+} from '@/lib/storage';
 import { toast } from '@/hooks/use-toast';
 import { t } from '@/lib/i18n';
 
@@ -24,7 +31,10 @@ function sortVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice[] {
 }
 
 export function useTTS(article: Article | null) {
-  const ttsRef = useRef(new WebSpeechTTS());
+  const webTTSRef = useRef(new WebSpeechTTS());
+  const openaiTTSRef = useRef<OpenAITTS | null>(null);
+  const [engineType, setEngineType] = useState<TTSEngineType>(() => getTTSEngine());
+  const [openaiVoice, setOpenaiVoice] = useState<OpenAIVoice>(() => getOpenAIVoicePref() as OpenAIVoice);
   const [isPlaying, setIsPlaying] = useState(false);
   const [paragraphIndex, setParagraphIndex] = useState(0);
   const [sentenceIndex, setSentenceIndex] = useState(0);
@@ -34,10 +44,37 @@ export function useTTS(article: Article | null) {
   const articleRef = useRef(article);
   const playingRef = useRef(false);
   const retryCountRef = useRef(0);
+  const engineTypeRef = useRef(engineType);
 
   const paragraphs = article ? splitIntoParagraphs(article.content) : [];
   const paragraphsRef = useRef(paragraphs);
   paragraphsRef.current = paragraphs;
+
+  // Keep ref in sync
+  useEffect(() => {
+    engineTypeRef.current = engineType;
+  }, [engineType]);
+
+  // Get the active TTS engine
+  const getEngine = useCallback((): TTSEngine => {
+    if (engineTypeRef.current === 'openai' && openaiTTSRef.current) {
+      return openaiTTSRef.current;
+    }
+    return webTTSRef.current;
+  }, []);
+
+  // Initialize/update OpenAI TTS engine
+  useEffect(() => {
+    const apiKey = getApiKey();
+    if (apiKey && getApiProvider() === 'openai') {
+      if (!openaiTTSRef.current) {
+        openaiTTSRef.current = new OpenAITTS(apiKey, openaiVoice);
+      } else {
+        openaiTTSRef.current.setApiKey(apiKey);
+        openaiTTSRef.current.setOpenAIVoice(openaiVoice);
+      }
+    }
+  }, [openaiVoice]);
 
   useEffect(() => {
     articleRef.current = article;
@@ -46,7 +83,7 @@ export function useTTS(article: Article | null) {
   // Load voices (sorted: zh-TW first)
   useEffect(() => {
     const loadVoices = () => {
-      const raw = ttsRef.current.getVoices();
+      const raw = webTTSRef.current.getVoices();
       const sorted = sortVoices(raw);
       setVoices(sorted);
       if (!selectedVoice && sorted.length > 0) {
@@ -67,7 +104,7 @@ export function useTTS(article: Article | null) {
       setSentenceIndex(article.sentenceOffset || 0);
       if (article.speed) setSpeed(article.speed);
       if (article.voiceURI) {
-        const v = ttsRef.current.getVoices().find((v) => v.voiceURI === article.voiceURI);
+        const v = webTTSRef.current.getVoices().find((v) => v.voiceURI === article.voiceURI);
         if (v) setSelectedVoice(v);
       }
     }
@@ -89,6 +126,27 @@ export function useTTS(article: Article | null) {
       setLastPlayedId(updated.id);
     },
     [speed, selectedVoice]
+  );
+
+  // Prefetch next sentence for OpenAI TTS
+  const prefetchNext = useCallback(
+    (pIdx: number, sIdx: number) => {
+      if (engineTypeRef.current !== 'openai' || !openaiTTSRef.current) return;
+      const paras = paragraphsRef.current;
+      if (pIdx >= paras.length) return;
+      const sentences = splitIntoSentences(paras[pIdx]);
+      let nextText: string | null = null;
+      if (sIdx + 1 < sentences.length) {
+        nextText = sentences[sIdx + 1];
+      } else if (pIdx + 1 < paras.length) {
+        const nextSentences = splitIntoSentences(paras[pIdx + 1]);
+        if (nextSentences.length > 0) nextText = nextSentences[0];
+      }
+      if (nextText) {
+        openaiTTSRef.current.prefetch(nextText, speed);
+      }
+    },
+    [speed]
   );
 
   const speakSentence = useCallback(
@@ -115,7 +173,12 @@ export function useTTS(article: Article | null) {
       setSentenceIndex(sIdx);
       saveProgress(pIdx, sIdx);
 
-      ttsRef.current.speak(
+      // Prefetch next sentence for OpenAI
+      prefetchNext(pIdx, sIdx);
+
+      const engine = getEngine();
+
+      engine.speak(
         sentences[sIdx],
         speed,
         selectedVoice,
@@ -127,8 +190,26 @@ export function useTTS(article: Article | null) {
         },
         undefined,
         (error, detail) => {
-          // "canceled" and "interrupted" are handled in tts.ts — won't reach here
           console.error(`[TTS Error] ${detail}`);
+
+          // If OpenAI fails, fall back to browser TTS
+          if (engineTypeRef.current === 'openai') {
+            console.warn('[TTS] OpenAI failed, falling back to browser voice');
+            toast({
+              title: t('ttsOpenaiError'),
+              variant: 'destructive',
+              duration: 5000,
+            });
+            setEngineType('browser');
+            setTTSEngine('browser');
+            engineTypeRef.current = 'browser';
+            // Retry with browser engine
+            if (playingRef.current) {
+              setTimeout(() => speakSentence(pIdx, sIdx), 300);
+            }
+            return;
+          }
+
           if (retryCountRef.current < MAX_RETRIES) {
             retryCountRef.current++;
             toast({
@@ -155,7 +236,7 @@ export function useTTS(article: Article | null) {
         }
       );
     },
-    [speed, selectedVoice, saveProgress]
+    [speed, selectedVoice, saveProgress, getEngine, prefetchNext]
   );
 
   const play = useCallback(() => {
@@ -168,9 +249,9 @@ export function useTTS(article: Article | null) {
   const pause = useCallback(() => {
     setIsPlaying(false);
     playingRef.current = false;
-    ttsRef.current.stop();
+    getEngine().stop();
     saveProgress(paragraphIndex, sentenceIndex);
-  }, [paragraphIndex, sentenceIndex, saveProgress]);
+  }, [paragraphIndex, sentenceIndex, saveProgress, getEngine]);
 
   const togglePlay = useCallback(() => {
     if (isPlaying) pause();
@@ -179,29 +260,29 @@ export function useTTS(article: Article | null) {
 
   const skipForward = useCallback(() => {
     const nextP = Math.min(paragraphIndex + 1, paragraphs.length - 1);
-    ttsRef.current.stop();
+    getEngine().stop();
     setParagraphIndex(nextP);
     setSentenceIndex(0);
     saveProgress(nextP, 0);
     if (playingRef.current) {
       speakSentence(nextP, 0);
     }
-  }, [paragraphIndex, paragraphs.length, speakSentence, saveProgress]);
+  }, [paragraphIndex, paragraphs.length, speakSentence, saveProgress, getEngine]);
 
   const skipBackward = useCallback(() => {
     const prevP = Math.max(paragraphIndex - 1, 0);
-    ttsRef.current.stop();
+    getEngine().stop();
     setParagraphIndex(prevP);
     setSentenceIndex(0);
     saveProgress(prevP, 0);
     if (playingRef.current) {
       speakSentence(prevP, 0);
     }
-  }, [paragraphIndex, speakSentence, saveProgress]);
+  }, [paragraphIndex, speakSentence, saveProgress, getEngine]);
 
   const seekToParagraph = useCallback(
     (idx: number) => {
-      ttsRef.current.stop();
+      getEngine().stop();
       setParagraphIndex(idx);
       setSentenceIndex(0);
       saveProgress(idx, 0);
@@ -209,7 +290,7 @@ export function useTTS(article: Article | null) {
         speakSentence(idx, 0);
       }
     },
-    [speakSentence, saveProgress]
+    [speakSentence, saveProgress, getEngine]
   );
 
   const changeSpeed = useCallback(
@@ -217,16 +298,82 @@ export function useTTS(article: Article | null) {
       setSpeed(newSpeed);
       setGlobalSpeed(newSpeed);
       if (isPlaying) {
-        ttsRef.current.stop();
+        getEngine().stop();
       }
     },
-    [isPlaying]
+    [isPlaying, getEngine]
+  );
+
+  const switchEngine = useCallback(
+    (type: TTSEngineType) => {
+      // Validate OpenAI prerequisites
+      if (type === 'openai') {
+        const apiKey = getApiKey();
+        const provider = getApiProvider();
+        if (!apiKey || provider !== 'openai') {
+          toast({
+            title: t('ttsEngineOpenaiNeedKey'),
+            variant: 'destructive',
+            duration: 5000,
+          });
+          return;
+        }
+        // Ensure OpenAI engine is initialized
+        if (!openaiTTSRef.current) {
+          openaiTTSRef.current = new OpenAITTS(apiKey, openaiVoice);
+        } else {
+          openaiTTSRef.current.setApiKey(apiKey);
+        }
+      }
+
+      // Stop current playback
+      const wasPlaying = playingRef.current;
+      if (wasPlaying) {
+        getEngine().stop();
+      }
+
+      setEngineType(type);
+      setTTSEngine(type);
+      engineTypeRef.current = type;
+
+      toast({
+        title: t('ttsEngineSwitched'),
+        description: type === 'openai' ? t('ttsEngineOpenai') : t('ttsEngineBrowser'),
+        duration: 2000,
+      });
+
+      // Resume playback with new engine
+      if (wasPlaying) {
+        setTimeout(() => {
+          playingRef.current = true;
+          setIsPlaying(true);
+          speakSentence(paragraphIndex, sentenceIndex);
+        }, 200);
+      }
+    },
+    [paragraphIndex, sentenceIndex, speakSentence, getEngine, openaiVoice]
+  );
+
+  const changeOpenAIVoice = useCallback(
+    (voice: OpenAIVoice) => {
+      setOpenaiVoice(voice);
+      setOpenAIVoicePref(voice);
+      if (openaiTTSRef.current) {
+        openaiTTSRef.current.setOpenAIVoice(voice);
+      }
+      // If currently playing with OpenAI, restart
+      if (engineTypeRef.current === 'openai' && playingRef.current) {
+        getEngine().stop();
+        setTimeout(() => speakSentence(paragraphIndex, sentenceIndex), 200);
+      }
+    },
+    [paragraphIndex, sentenceIndex, speakSentence, getEngine]
   );
 
   // Re-speak when speed changes during playback
   useEffect(() => {
     if (isPlaying && playingRef.current) {
-      ttsRef.current.stop();
+      getEngine().stop();
       speakSentence(paragraphIndex, sentenceIndex);
     }
   }, [speed, selectedVoice]);
@@ -234,7 +381,8 @@ export function useTTS(article: Article | null) {
   // Cleanup
   useEffect(() => {
     return () => {
-      ttsRef.current.stop();
+      webTTSRef.current.stop();
+      openaiTTSRef.current?.stop();
     };
   }, []);
 
@@ -257,5 +405,11 @@ export function useTTS(article: Article | null) {
     seekToParagraph,
     play,
     pause,
+    // New: engine switching
+    engineType,
+    switchEngine,
+    openaiVoice,
+    changeOpenAIVoice,
+    openaiVoices: getOpenAIVoices(),
   };
 }

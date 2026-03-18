@@ -123,6 +123,12 @@ const translations = {
     exportMp3Done: 'MP3 已下載',
     exportMp3Error: 'MP3 匯出失敗',
     exportMp3NeedOpenai: 'MP3 匯出需要設定 OpenAI API Key',
+    ttsEngineBrowser: '瀏覽器語音',
+    ttsEngineOpenai: 'AI 語音',
+    ttsEngineOpenaiNeedKey: 'AI 語音需要設定 OpenAI API Key',
+    ttsEngineOpenaiVoice: 'AI 語音角色',
+    ttsEngineSwitched: '已切換語音引擎',
+    ttsOpenaiError: 'AI 語音失敗，已切換回瀏覽器語音',
   },
   en: {
     appTitle: 'Voice Reader',
@@ -248,6 +254,12 @@ const translations = {
     exportMp3Done: 'MP3 downloaded',
     exportMp3Error: 'MP3 export failed',
     exportMp3NeedOpenai: 'MP3 export requires OpenAI API Key',
+    ttsEngineBrowser: 'Browser Voice',
+    ttsEngineOpenai: 'AI Voice',
+    ttsEngineOpenaiNeedKey: 'AI Voice requires OpenAI API Key',
+    ttsEngineOpenaiVoice: 'AI Voice',
+    ttsEngineSwitched: 'Voice engine switched',
+    ttsOpenaiError: 'AI Voice failed, switched back to Browser Voice',
   },
 } as const;
 

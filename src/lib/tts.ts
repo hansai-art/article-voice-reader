@@ -125,6 +125,203 @@ export class WebSpeechTTS implements TTSEngine {
   }
 }
 
+export type OpenAIVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
+
+const OPENAI_VOICES: OpenAIVoice[] = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+
+export function getOpenAIVoices(): OpenAIVoice[] {
+  return OPENAI_VOICES;
+}
+
+/**
+ * OpenAI TTS engine — streams sentences through the OpenAI TTS API
+ * and plays them back via HTMLAudioElement.
+ */
+export class OpenAITTS implements TTSEngine {
+  private audio: HTMLAudioElement | null = null;
+  private currentObjectUrl: string | null = null;
+  private paused = false;
+  private speaking = false;
+  private abortController: AbortController | null = null;
+  private apiKey: string;
+  private openaiVoice: OpenAIVoice = 'nova';
+  private prefetchedAudio: Map<string, Blob> = new Map();
+  private prefetchController: AbortController | null = null;
+
+  constructor(apiKey: string, voice: OpenAIVoice = 'nova') {
+    this.apiKey = apiKey;
+    this.openaiVoice = voice;
+  }
+
+  setApiKey(key: string) {
+    this.apiKey = key;
+  }
+
+  setOpenAIVoice(voice: OpenAIVoice) {
+    this.openaiVoice = voice;
+  }
+
+  getOpenAIVoice(): OpenAIVoice {
+    return this.openaiVoice;
+  }
+
+  /**
+   * Pre-fetch audio for a given text so it's ready when needed.
+   */
+  prefetch(text: string, rate: number) {
+    if (this.prefetchedAudio.has(text)) return;
+    this.prefetchController?.abort();
+    this.prefetchController = new AbortController();
+    this.fetchAudio(text, rate, this.prefetchController.signal)
+      .then((blob) => {
+        if (blob) this.prefetchedAudio.set(text, blob);
+      })
+      .catch(() => {
+        // prefetch failure is non-critical
+      });
+  }
+
+  async speak(
+    text: string,
+    rate: number,
+    _voice: SpeechSynthesisVoice | null,
+    onEnd: () => void,
+    _onBoundary?: (charIndex: number) => void,
+    onError?: (error: string, detail: string) => void
+  ) {
+    this.stop();
+    this.speaking = true;
+    this.paused = false;
+
+    try {
+      // Check if we have a prefetched blob
+      let blob = this.prefetchedAudio.get(text);
+      if (blob) {
+        this.prefetchedAudio.delete(text);
+      } else {
+        this.abortController = new AbortController();
+        blob = await this.fetchAudio(text, rate, this.abortController.signal);
+      }
+
+      if (!blob) {
+        this.speaking = false;
+        if (onError) onError('fetch_failed', `Failed to fetch audio for "${text.slice(0, 50)}..."`);
+        else onEnd();
+        return;
+      }
+
+      // If we were stopped while fetching, don't play
+      if (!this.speaking) return;
+
+      this.currentObjectUrl = URL.createObjectURL(blob);
+      this.audio = new Audio(this.currentObjectUrl);
+
+      this.audio.onended = () => {
+        this.cleanup();
+        this.speaking = false;
+        onEnd();
+      };
+
+      this.audio.onerror = () => {
+        this.cleanup();
+        this.speaking = false;
+        if (onError) onError('playback_error', `Audio playback failed for "${text.slice(0, 50)}..."`);
+        else onEnd();
+      };
+
+      await this.audio.play();
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return; // intentional stop
+      this.cleanup();
+      this.speaking = false;
+      const msg = err?.message || 'Unknown error';
+      if (onError) onError('openai_tts_error', msg);
+      else onEnd();
+    }
+  }
+
+  stop() {
+    this.abortController?.abort();
+    this.abortController = null;
+    this.prefetchController?.abort();
+    this.prefetchController = null;
+    if (this.audio) {
+      this.audio.pause();
+      this.audio.onended = null;
+      this.audio.onerror = null;
+    }
+    this.cleanup();
+    this.speaking = false;
+    this.paused = false;
+    // Clear prefetch cache
+    this.prefetchedAudio.clear();
+  }
+
+  pause() {
+    if (this.audio && this.speaking) {
+      this.audio.pause();
+      this.paused = true;
+    }
+  }
+
+  resume() {
+    if (this.audio && this.paused) {
+      this.audio.play();
+      this.paused = false;
+    }
+  }
+
+  isPaused() {
+    return this.paused;
+  }
+
+  isSpeaking() {
+    return this.speaking;
+  }
+
+  getVoices(): SpeechSynthesisVoice[] {
+    // OpenAI TTS doesn't use browser voices
+    return [];
+  }
+
+  private async fetchAudio(
+    text: string,
+    speed: number,
+    signal: AbortSignal
+  ): Promise<Blob | null> {
+    const response = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'tts-1',
+        input: text,
+        voice: this.openaiVoice,
+        speed,
+        response_format: 'mp3',
+      }),
+      signal,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`OpenAI TTS API ${response.status}: ${errText}`);
+    }
+
+    return response.blob();
+  }
+
+  private cleanup() {
+    if (this.currentObjectUrl) {
+      URL.revokeObjectURL(this.currentObjectUrl);
+      this.currentObjectUrl = null;
+    }
+    this.audio = null;
+  }
+}
+
 export function estimateReadingTime(charCount: number, speed: number = 1): number {
   return Math.ceil(charCount / (250 * speed));
 }

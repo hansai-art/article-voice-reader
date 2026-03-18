@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <!-- Full bleed background (maskable icons need edge-to-edge color) -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- Content within safe zone (inner 80% = 40px padding each side at 512) -->
+  <!-- Safe zone: 51.2px padding → content area ~102 to ~410 -->
+  <!-- Book/page shape (shifted inward for safe zone) -->
+  <rect x="120" y="120" width="170" height="272" rx="12" fill="white" opacity="0.95"/>
+  <rect x="145" y="165" width="90" height="8" rx="4" fill="#93c5fd"/>
+  <rect x="145" y="190" width="120" height="8" rx="4" fill="#93c5fd"/>
+  <rect x="145" y="215" width="100" height="8" rx="4" fill="#93c5fd"/>
+  <rect x="145" y="240" width="110" height="8" rx="4" fill="#93c5fd"/>
+  <rect x="145" y="265" width="85" height="8" rx="4" fill="#93c5fd"/>
+  <rect x="145" y="290" width="105" height="8" rx="4" fill="#93c5fd"/>
+  <rect x="145" y="315" width="75" height="8" rx="4" fill="#93c5fd"/>
+  <!-- Page fold -->
+  <path d="M278 120 L278 152 L290 152 Q290 120 278 120Z" fill="#dbeafe" opacity="0.8"/>
+  <!-- Sound waves -->
+  <path d="M310 220 Q326 256 310 292" stroke="white" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.9"/>
+  <path d="M338 190 Q364 256 338 322" stroke="white" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.7"/>
+  <path d="M366 160 Q400 256 366 352" stroke="white" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.5"/>
+</svg>
