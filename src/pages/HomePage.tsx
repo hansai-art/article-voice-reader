@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Globe, Trash2, BookOpen, Sun, Moon, Download, Upload, Settings, Search, ArrowUpDown, BarChart3 } from 'lucide-react';
+import { Plus, Globe, Trash2, BookOpen, Sun, Moon, Download, Upload, Settings, Search, ArrowUpDown, BarChart3, Play } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -149,7 +149,7 @@ const HomePage = () => {
   };
 
   return (
-    <div className="min-h-screen pb-6">
+    <div className={`min-h-screen ${lastPlayedArticle ? 'pb-20' : 'pb-6'}`}>
       {/* Header */}
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border px-6 py-4">
         <div className="flex items-center justify-between max-w-lg mx-auto">
@@ -345,6 +345,27 @@ const HomePage = () => {
           </AnimatePresence>
         )}
       </main>
+
+      {/* Mini player bar — shows last played article for quick resume */}
+      {lastPlayedArticle && (
+        <div
+          className="fixed bottom-0 left-0 right-0 z-10 bg-background/95 backdrop-blur border-t border-border px-6 py-3 cursor-pointer btn-press"
+          onClick={() => navigate(`/player/${lastPlayedArticle.id}`)}
+        >
+          <div className="max-w-lg mx-auto flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center shrink-0">
+              <Play className="h-5 w-5 text-primary-foreground ml-0.5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{lastPlayedArticle.title}</p>
+              <p className="text-xs text-muted-foreground">{t('progress')} {progressOf(lastPlayedArticle)}%</p>
+            </div>
+            <div className="h-1 w-16 bg-secondary rounded-full overflow-hidden shrink-0">
+              <div className="h-full bg-primary rounded-full" style={{ width: `${progressOf(lastPlayedArticle)}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>

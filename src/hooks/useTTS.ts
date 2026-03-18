@@ -6,7 +6,7 @@ import {
 import {
   Article, saveArticle, setLastPlayedId, getGlobalSpeed, setGlobalSpeed,
   getApiKey, getApiProvider, getTTSEngine, setTTSEngine, TTSEngineType,
-  getOpenAIVoicePref, setOpenAIVoicePref,
+  getOpenAIVoicePref, setOpenAIVoicePref, updateReadingStats,
 } from '@/lib/storage';
 import { toast } from '@/hooks/use-toast';
 import { t } from '@/lib/i18n';
@@ -45,6 +45,7 @@ export function useTTS(article: Article | null) {
   const playingRef = useRef(false);
   const retryCountRef = useRef(0);
   const onFinishedRef = useRef<(() => void) | null>(null);
+  const playStartTimeRef = useRef<number>(0);
   const engineTypeRef = useRef(engineType);
 
   const paragraphs = article ? splitIntoParagraphs(article.content) : [];
@@ -164,6 +165,12 @@ export function useTTS(article: Article | null) {
         setIsPlaying(false);
         playingRef.current = false;
         retryCountRef.current = 0;
+        // Track listening time + mark completed
+        if (playStartTimeRef.current > 0) {
+          const minutesListened = (Date.now() - playStartTimeRef.current) / 60000;
+          updateReadingStats(minutesListened, true);
+          playStartTimeRef.current = 0;
+        }
         onFinishedRef.current?.();
         return;
       }
@@ -252,6 +259,7 @@ export function useTTS(article: Article | null) {
     setIsPlaying(true);
     playingRef.current = true;
     retryCountRef.current = 0;
+    playStartTimeRef.current = Date.now();
     speakSentence(paragraphIndex, sentenceIndex);
   }, [paragraphIndex, sentenceIndex, speakSentence]);
 
@@ -260,6 +268,12 @@ export function useTTS(article: Article | null) {
     playingRef.current = false;
     getEngine().stop();
     saveProgress(paragraphIndex, sentenceIndex);
+    // Track listening time
+    if (playStartTimeRef.current > 0) {
+      const minutesListened = (Date.now() - playStartTimeRef.current) / 60000;
+      if (minutesListened > 0.1) updateReadingStats(minutesListened);
+      playStartTimeRef.current = 0;
+    }
   }, [paragraphIndex, sentenceIndex, saveProgress, getEngine]);
 
   const togglePlay = useCallback(() => {
