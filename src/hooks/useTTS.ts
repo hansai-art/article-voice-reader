@@ -44,6 +44,7 @@ export function useTTS(article: Article | null) {
   const articleRef = useRef(article);
   const playingRef = useRef(false);
   const retryCountRef = useRef(0);
+  const onFinishedRef = useRef<(() => void) | null>(null);
   const engineTypeRef = useRef(engineType);
 
   const paragraphs = article ? splitIntoParagraphs(article.content) : [];
@@ -163,6 +164,7 @@ export function useTTS(article: Article | null) {
         setIsPlaying(false);
         playingRef.current = false;
         retryCountRef.current = 0;
+        onFinishedRef.current?.();
         return;
       }
 
@@ -418,5 +420,6 @@ export function useTTS(article: Article | null) {
     openaiVoice,
     changeOpenAIVoice,
     openaiVoices: getOpenAIVoices(),
+    setOnFinished: (cb: (() => void) | null) => { onFinishedRef.current = cb; },
   };
 }

@@ -9,6 +9,7 @@ export interface Article {
   voiceURI: string;
   lastPlayedAt: number;
   createdAt: number;
+  bookmarks?: number[]; // bookmarked paragraph indices
 }
 
 const ARTICLES_KEY = 'article-reader-articles';

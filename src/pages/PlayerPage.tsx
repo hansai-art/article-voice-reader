@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward,
   Pencil, Check, X, Minus, Plus, Timer, Eye, EyeOff, Sparkles, Loader2, Download,
-  Volume2, Bot,
+  Volume2, Bot, Bookmark, ListOrdered,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { getArticle, saveArticle, Article, getFontSize, setFontSize as saveFontSize } from '@/lib/storage';
+import { getArticle, getArticles, saveArticle, Article, getFontSize, setFontSize as saveFontSize } from '@/lib/storage';
 import { useLanguage } from '@/hooks/useLanguage';
 import { useTTS } from '@/hooks/useTTS';
 import { useWakeLock } from '@/hooks/useWakeLock';
@@ -19,6 +19,7 @@ import { estimateReadingTime } from '@/lib/tts';
 import { generateSummary, SummaryResult } from '@/lib/ai-summary';
 import { exportToMp3, getExportVoices, ExportVoice } from '@/lib/mp3-export';
 import { getApiKey, getApiProvider } from '@/lib/storage';
+import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { toast } from '@/hooks/use-toast';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0];
@@ -40,6 +41,8 @@ const PlayerPage = () => {
   const [showSummary, setShowSummary] = useState(false);
   const [mp3Loading, setMp3Loading] = useState(false);
   const [mp3Progress, setMp3Progress] = useState(0);
+  const [autoPlayNext, setAutoPlayNext] = useState(false);
+  const [bookmarks, setBookmarks] = useState<Set<number>>(new Set());
   const [sleepMinutes, setSleepMinutes] = useState(0);
   const [sleepRemaining, setSleepRemaining] = useState(0);
   const sleepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -49,10 +52,28 @@ const PlayerPage = () => {
   useEffect(() => {
     if (id) {
       const a = getArticle(id);
-      if (a) setArticle(a);
-      else navigate('/');
+      if (a) {
+        setArticle(a);
+        setBookmarks(new Set(a.bookmarks || []));
+      } else {
+        navigate('/');
+      }
     }
   }, [id]);
+
+  // Auto-play next article when current finishes
+  useEffect(() => {
+    setOnFinished(() => {
+      if (!autoPlayNext || !article) return;
+      const allArticles = getArticles();
+      const currentIdx = allArticles.findIndex((a) => a.id === article.id);
+      const next = allArticles[currentIdx + 1];
+      if (next) {
+        toast({ title: t('playingNext').replace('{title}', next.title), duration: 3000 });
+        navigate(`/player/${next.id}`);
+      }
+    });
+  }, [autoPlayNext, article, navigate, setOnFinished, t]);
 
   const {
     isPlaying,
@@ -74,6 +95,7 @@ const PlayerPage = () => {
     openaiVoice,
     changeOpenAIVoice,
     openaiVoices,
+    setOnFinished,
   } = useTTS(article);
 
   // Wake lock
@@ -205,6 +227,27 @@ const PlayerPage = () => {
     setIsEditingTitle(false);
   };
   const cancelEditTitle = () => setIsEditingTitle(false);
+
+  // Bookmarks
+  const toggleBookmark = (idx: number) => {
+    const next = new Set(bookmarks);
+    if (next.has(idx)) {
+      next.delete(idx);
+      toast({ title: t('bookmarkRemove'), duration: 1500 });
+    } else {
+      next.add(idx);
+      toast({ title: t('bookmarkAdd'), duration: 1500 });
+    }
+    setBookmarks(next);
+    if (article) {
+      const updated = { ...article, bookmarks: Array.from(next) };
+      saveArticle(updated);
+      setArticle(updated);
+    }
+  };
+
+  // Swipe gestures
+  const swipeHandlers = useSwipeGesture(skipForward, skipBackward);
 
   // AI Summary
   const handleGenerateSummary = async () => {
@@ -385,24 +428,31 @@ const PlayerPage = () => {
       </div>
 
       {/* Article content */}
-      <main className="max-w-lg mx-auto px-6 mt-4">
+      <main className="max-w-lg mx-auto px-6 mt-4" {...swipeHandlers}>
         <div className="space-y-4 prose-reader leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
           {paragraphs.map((para, idx) => {
             const distance = Math.abs(idx - paragraphIndex);
             const immersiveOpacity = immersiveMode
               ? distance === 0 ? 'opacity-100' : distance === 1 ? 'opacity-30' : 'opacity-5 pointer-events-none'
               : '';
+            const isBookmarked = bookmarks.has(idx);
             return (
               <motion.div
                 key={idx}
                 ref={(el) => { paragraphRefs.current[idx] = el; }}
-                className={`px-4 py-3 rounded-lg cursor-pointer transition-all duration-300 ${
+                className={`px-4 py-3 rounded-lg cursor-pointer transition-all duration-300 relative ${
                   idx === paragraphIndex
                     ? 'bg-accent/10 border-l-4 border-accent'
-                    : 'border-l-4 border-transparent hover:bg-muted/50'
+                    : isBookmarked
+                      ? 'border-l-4 border-primary/40 bg-primary/5'
+                      : 'border-l-4 border-transparent hover:bg-muted/50'
                 } ${immersiveOpacity}`}
                 onClick={() => seekToParagraph(idx)}
+                onDoubleClick={() => toggleBookmark(idx)}
               >
+                {isBookmarked && (
+                  <Bookmark className="absolute top-2 right-2 h-3.5 w-3.5 text-primary/50 fill-primary/30" />
+                )}
                 <p className={idx === paragraphIndex ? 'text-foreground' : 'text-muted-foreground'}>
                   {para}
                 </p>
@@ -518,6 +568,19 @@ const PlayerPage = () => {
                 <Plus className="h-3.5 w-3.5" />
               </Button>
             </div>
+
+            {/* Auto-play next */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-9 w-9 ${autoPlayNext ? 'text-accent' : ''}`}
+              onClick={() => {
+                setAutoPlayNext(!autoPlayNext);
+                toast({ title: !autoPlayNext ? t('autoPlayNextOn') : t('autoPlayNextOff'), duration: 1500 });
+              }}
+            >
+              <ListOrdered className="h-4 w-4" />
+            </Button>
 
             {/* Immersive mode */}
             <Button
