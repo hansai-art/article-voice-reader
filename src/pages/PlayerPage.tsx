@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward,
-  Pencil, Check, X, Minus, Plus, Timer,
+  Pencil, Check, X, Minus, Plus, Timer, Eye, EyeOff,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,7 @@ import { useTTS } from '@/hooks/useTTS';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { estimateReadingTime } from '@/lib/tts';
 
-const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
 const SLEEP_OPTIONS = [0, 15, 30, 45, 60, 90]; // 0 = off
 const FONT_MIN = 14;
 const FONT_MAX = 24;
@@ -29,6 +29,7 @@ const PlayerPage = () => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [fontSize, setFontSizeState] = useState(() => getFontSize());
+  const [immersiveMode, setImmersiveMode] = useState(false);
   const [sleepMinutes, setSleepMinutes] = useState(0);
   const [sleepRemaining, setSleepRemaining] = useState(0);
   const sleepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -224,22 +225,28 @@ const PlayerPage = () => {
       {/* Article content */}
       <main className="max-w-lg mx-auto px-6 mt-6">
         <div className="space-y-4 prose-reader leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
-          {paragraphs.map((para, idx) => (
-            <motion.div
-              key={idx}
-              ref={(el) => { paragraphRefs.current[idx] = el; }}
-              className={`px-4 py-3 rounded-lg transition-colors cursor-pointer ${
-                idx === paragraphIndex
-                  ? 'bg-accent/10 border-l-4 border-accent'
-                  : 'border-l-4 border-transparent hover:bg-muted/50'
-              }`}
-              onClick={() => seekToParagraph(idx)}
-            >
-              <p className={idx === paragraphIndex ? 'text-foreground' : 'text-muted-foreground'}>
-                {para}
-              </p>
-            </motion.div>
-          ))}
+          {paragraphs.map((para, idx) => {
+            const distance = Math.abs(idx - paragraphIndex);
+            const immersiveOpacity = immersiveMode
+              ? distance === 0 ? 'opacity-100' : distance === 1 ? 'opacity-30' : 'opacity-5 pointer-events-none'
+              : '';
+            return (
+              <motion.div
+                key={idx}
+                ref={(el) => { paragraphRefs.current[idx] = el; }}
+                className={`px-4 py-3 rounded-lg cursor-pointer transition-all duration-300 ${
+                  idx === paragraphIndex
+                    ? 'bg-accent/10 border-l-4 border-accent'
+                    : 'border-l-4 border-transparent hover:bg-muted/50'
+                } ${immersiveOpacity}`}
+                onClick={() => seekToParagraph(idx)}
+              >
+                <p className={idx === paragraphIndex ? 'text-foreground' : 'text-muted-foreground'}>
+                  {para}
+                </p>
+              </motion.div>
+            );
+          })}
         </div>
       </main>
 
@@ -325,6 +332,16 @@ const PlayerPage = () => {
                 <Plus className="h-3.5 w-3.5" />
               </Button>
             </div>
+
+            {/* Immersive mode */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-9 w-9 ${immersiveMode ? 'text-accent' : ''}`}
+              onClick={() => setImmersiveMode(!immersiveMode)}
+            >
+              {immersiveMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
 
             {/* Sleep timer */}
             <Popover>

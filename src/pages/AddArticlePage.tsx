@@ -1,12 +1,14 @@
 import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Upload, FileText, Sparkles } from 'lucide-react';
+import { ArrowLeft, Upload, FileText, Sparkles, Link, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useLanguage } from '@/hooks/useLanguage';
 import { createArticle, saveArticle } from '@/lib/storage';
 import { parseFile } from '@/lib/file-parser';
 import { estimateReadingTime, cleanText } from '@/lib/tts';
+import { fetchArticleFromURL } from '@/lib/url-parser';
 import { toast } from '@/hooks/use-toast';
 
 const AddArticlePage = () => {
@@ -15,10 +17,39 @@ const AddArticlePage = () => {
   const [content, setContent] = useState('');
   const [fileName, setFileName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+  const [urlLoading, setUrlLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const wordCount = content.length;
   const readTime = estimateReadingTime(wordCount);
+
+  // URL import
+  const handleUrlFetch = async () => {
+    const url = urlInput.trim();
+    if (!url) return;
+
+    setUrlLoading(true);
+    try {
+      const result = await fetchArticleFromURL(url);
+      if (result) {
+        setContent(result.content);
+        setFileName(result.title);
+        toast({ title: `${result.title}`, duration: 3000 });
+      }
+    } catch (e) {
+      const err = e instanceof Error ? e.message : 'UNKNOWN';
+      if (err === 'INVALID_URL') {
+        toast({ title: t('urlInvalid'), variant: 'destructive' });
+      } else if (err === 'NO_CONTENT') {
+        toast({ title: t('urlNoContent'), variant: 'destructive' });
+      } else {
+        toast({ title: t('urlFetchError'), description: err, variant: 'destructive', duration: 5000 });
+      }
+    } finally {
+      setUrlLoading(false);
+    }
+  };
 
   const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -85,6 +116,35 @@ const AddArticlePage = () => {
       </header>
 
       <main className="max-w-lg mx-auto px-6 mt-6 space-y-6 pb-8">
+        {/* URL import */}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Link className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleUrlFetch(); }}
+              placeholder={t('urlPlaceholder')}
+              className="pl-9"
+              disabled={urlLoading}
+            />
+          </div>
+          <Button
+            onClick={handleUrlFetch}
+            disabled={!urlInput.trim() || urlLoading}
+            className="btn-press shrink-0"
+          >
+            {urlLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('urlFetch')}
+          </Button>
+        </div>
+
+        {/* Or divider */}
+        <div className="flex items-center gap-4">
+          <div className="flex-1 h-px bg-border" />
+          <span className="text-sm text-muted-foreground">{t('orDivider')}</span>
+          <div className="flex-1 h-px bg-border" />
+        </div>
+
         {/* File upload dropzone */}
         <div
           onDragOver={(e) => e.preventDefault()}

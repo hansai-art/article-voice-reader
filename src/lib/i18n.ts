@@ -71,6 +71,13 @@ const translations = {
     cleanTextHint: '移除多餘空白、網頁元素等雜訊',
     cleanTextDone: '已清理完成（移除了 {count} 個字元）',
     cleanTextNoop: '文字已經很乾淨了',
+    urlPlaceholder: '貼上文章網址...',
+    urlFetch: '擷取',
+    urlFetching: '正在擷取文章...',
+    urlFetchError: '無法擷取文章內容，請確認網址是否正確',
+    urlNoContent: '無法從此網頁擷取文章內容',
+    urlInvalid: '請輸入有效的網址',
+    immersiveMode: '沉浸模式',
   },
   en: {
     appTitle: 'Voice Reader',
@@ -144,6 +151,13 @@ const translations = {
     cleanTextHint: 'Remove extra whitespace, web artifacts, etc.',
     cleanTextDone: 'Cleaned ({count} chars removed)',
     cleanTextNoop: 'Text is already clean',
+    urlPlaceholder: 'Paste article URL...',
+    urlFetch: 'Fetch',
+    urlFetching: 'Fetching article...',
+    urlFetchError: 'Failed to fetch article. Check the URL.',
+    urlNoContent: 'Could not extract article content from this page.',
+    urlInvalid: 'Please enter a valid URL',
+    immersiveMode: 'Focus Mode',
   },
 } as const;
 
