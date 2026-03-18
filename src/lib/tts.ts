@@ -388,3 +388,46 @@ export function detectLanguage(text: string): 'zh' | 'en' | 'mixed' {
   if (cjkRatio < 0.2) return 'en';
   return 'mixed';
 }
+
+/**
+ * Extract headings/TOC from paragraphs.
+ * Identifies short lines (< 60 chars) that look like headings.
+ */
+export function extractHeadings(paragraphs: string[]): { index: number; text: string }[] {
+  return paragraphs
+    .map((p, idx) => ({ index: idx, text: p.trim() }))
+    .filter(({ text }) => {
+      if (text.length > 80 || text.length < 2) return false;
+      // Looks like a heading: short, no ending punctuation, or starts with number/section marker
+      if (/^[一二三四五六七八九十\d]+[、.\s]/.test(text)) return true;
+      if (/^(第[一二三四五六七八九十\d]+[章節篇部])/.test(text)) return true;
+      if (/^#{1,6}\s/.test(text)) return true;
+      if (/^\d+\.\s/.test(text)) return true;
+      // Short lines without sentence-ending punctuation
+      if (text.length <= 40 && !/[。！？.!?]$/.test(text)) return true;
+      return false;
+    });
+}
+
+/**
+ * Apply bionic reading: bold the first half of each word.
+ * Returns HTML string with <b> tags.
+ */
+export function applyBionicReading(text: string): string {
+  // For Chinese: bold first char of every 2-char group
+  // For English: bold first half of each word
+  return text.replace(/[\u4e00-\u9fff]{2,}|[a-zA-Z]+/g, (match) => {
+    if (/[\u4e00-\u9fff]/.test(match)) {
+      // Chinese: bold every other character
+      let result = '';
+      for (let i = 0; i < match.length; i++) {
+        result += i % 2 === 0 ? `<b>${match[i]}</b>` : match[i];
+      }
+      return result;
+    } else {
+      // English: bold first half
+      const mid = Math.ceil(match.length / 2);
+      return `<b>${match.slice(0, mid)}</b>${match.slice(mid)}`;
+    }
+  });
+}

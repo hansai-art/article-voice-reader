@@ -35,6 +35,7 @@ const HomePage = () => {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('recent');
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [showStats, setShowStats] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
@@ -102,8 +103,20 @@ const HomePage = () => {
   };
 
   // Filter + sort
+  // Collect all tags
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    articles.forEach((a) => a.tags?.forEach((t) => tagSet.add(t)));
+    return Array.from(tagSet).sort();
+  }, [articles]);
+
   const filteredArticles = useMemo(() => {
     let list = articles;
+
+    // Tag filter
+    if (selectedTag) {
+      list = list.filter((a) => a.tags?.includes(selectedTag));
+    }
 
     // Search filter
     if (searchQuery.trim()) {
@@ -213,6 +226,31 @@ const HomePage = () => {
           </div>
         )}
 
+        {/* Tag filter chips */}
+        {allTags.length > 0 && (
+          <div className="flex gap-1.5 flex-wrap">
+            <Button
+              variant={selectedTag === null ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 text-xs rounded-full px-3"
+              onClick={() => setSelectedTag(null)}
+            >
+              {lang === 'zh-TW' ? '全部' : 'All'}
+            </Button>
+            {allTags.map((tag) => (
+              <Button
+                key={tag}
+                variant={selectedTag === tag ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 text-xs rounded-full px-3"
+                onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
+              >
+                {tag}
+              </Button>
+            ))}
+          </div>
+        )}
+
         {/* Resume Reading banner */}
         {lastPlayedArticle && !searchQuery && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
@@ -284,6 +322,15 @@ const HomePage = () => {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
+                  {article.tags && article.tags.length > 0 && (
+                    <div className="mt-2 flex gap-1 flex-wrap">
+                      {article.tags.map((tag) => (
+                        <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {article.lastPlayedAt > 0 && (
                     <div className="mt-3 h-1 bg-secondary rounded-full overflow-hidden">
                       <div

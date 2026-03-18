@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward,
   Pencil, Check, X, Minus, Plus, Timer, Eye, EyeOff, Sparkles, Loader2, Download,
-  Volume2, Bot, Bookmark, ListOrdered,
+  Volume2, Bot, Bookmark, ListOrdered, List, Type, MessageSquare, Tag,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import { getArticle, getArticles, saveArticle, Article, getFontSize, setFontSize
 import { useLanguage } from '@/hooks/useLanguage';
 import { useTTS } from '@/hooks/useTTS';
 import { useWakeLock } from '@/hooks/useWakeLock';
-import { estimateReadingTime } from '@/lib/tts';
+import { estimateReadingTime, extractHeadings, applyBionicReading } from '@/lib/tts';
 import { generateSummary, SummaryResult } from '@/lib/ai-summary';
 import { exportToMp3, getExportVoices, ExportVoice } from '@/lib/mp3-export';
 import { getApiKey, getApiProvider } from '@/lib/storage';
@@ -43,6 +43,10 @@ const PlayerPage = () => {
   const [mp3Progress, setMp3Progress] = useState(0);
   const [autoPlayNext, setAutoPlayNext] = useState(false);
   const [bookmarks, setBookmarks] = useState<Set<number>>(new Set());
+  const [bionicMode, setBionicMode] = useState(false);
+  const [notes, setNotes] = useState<Record<number, string>>({});
+  const [editingNote, setEditingNote] = useState<number | null>(null);
+  const [noteText, setNoteText] = useState('');
   const [sleepMinutes, setSleepMinutes] = useState(0);
   const [sleepRemaining, setSleepRemaining] = useState(0);
   const sleepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -55,6 +59,7 @@ const PlayerPage = () => {
       if (a) {
         setArticle(a);
         setBookmarks(new Set(a.bookmarks || []));
+        setNotes(a.notes || {});
       } else {
         navigate('/');
       }
@@ -246,6 +251,31 @@ const PlayerPage = () => {
     }
   };
 
+  // Notes
+  const startNote = (idx: number) => {
+    setEditingNote(idx);
+    setNoteText(notes[idx] || '');
+  };
+  const saveNote = () => {
+    if (editingNote === null || !article) return;
+    const updated = { ...notes };
+    if (noteText.trim()) {
+      updated[editingNote] = noteText.trim();
+      toast({ title: t('noteSaved'), duration: 1500 });
+    } else {
+      delete updated[editingNote];
+      toast({ title: t('noteDeleted'), duration: 1500 });
+    }
+    setNotes(updated);
+    const updatedArticle = { ...article, notes: updated };
+    saveArticle(updatedArticle);
+    setArticle(updatedArticle);
+    setEditingNote(null);
+  };
+
+  // TOC
+  const headings = useMemo(() => extractHeadings(paragraphs), [paragraphs]);
+
   // Swipe gestures
   const swipeHandlers = useSwipeGesture(skipForward, skipBackward);
 
@@ -346,6 +376,32 @@ const PlayerPage = () => {
           ) : (
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <h1 className="text-lg font-bold truncate flex-1">{article.title}</h1>
+              {/* TOC */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8 text-muted-foreground">
+                    <List className="h-3.5 w-3.5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-2 max-h-64 overflow-y-auto" align="end">
+                  <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('tableOfContents')}</p>
+                  {headings.length === 0 ? (
+                    <p className="text-xs text-muted-foreground px-2 py-1">{t('noHeadings')}</p>
+                  ) : (
+                    headings.map((h) => (
+                      <Button
+                        key={h.index}
+                        variant={h.index === paragraphIndex ? 'secondary' : 'ghost'}
+                        className="w-full justify-start text-xs h-7 truncate"
+                        onClick={() => seekToParagraph(h.index)}
+                      >
+                        {h.text.slice(0, 40)}
+                      </Button>
+                    ))
+                  )}
+                </PopoverContent>
+              </Popover>
+              {/* MP3 Export */}
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8 text-muted-foreground" disabled={mp3Loading}>
@@ -364,6 +420,50 @@ const PlayerPage = () => {
                       {t('exportMp3Progress').replace('{progress}', String(mp3Progress))}
                     </p>
                   )}
+                </PopoverContent>
+              </Popover>
+              {/* Tags */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8 text-muted-foreground">
+                    <Tag className="h-3.5 w-3.5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-52 p-3" align="end">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">{t('tags')}</p>
+                  {article.tags && article.tags.length > 0 && (
+                    <div className="flex gap-1 flex-wrap mb-2">
+                      {article.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary cursor-pointer hover:bg-destructive/10 hover:text-destructive transition-colors"
+                          onClick={() => {
+                            const updated = { ...article, tags: article.tags!.filter((t) => t !== tag) };
+                            saveArticle(updated);
+                            setArticle(updated);
+                          }}
+                        >
+                          {tag} ×
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <Input
+                    placeholder={t('tagPlaceholder')}
+                    className="h-7 text-xs"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const val = (e.target as HTMLInputElement).value.trim();
+                        if (!val) return;
+                        const tags = [...(article.tags || [])];
+                        if (!tags.includes(val)) tags.push(val);
+                        const updated = { ...article, tags };
+                        saveArticle(updated);
+                        setArticle(updated);
+                        (e.target as HTMLInputElement).value = '';
+                      }
+                    }}
+                  />
                 </PopoverContent>
               </Popover>
               <Button
@@ -453,9 +553,41 @@ const PlayerPage = () => {
                 {isBookmarked && (
                   <Bookmark className="absolute top-2 right-2 h-3.5 w-3.5 text-primary/50 fill-primary/30" />
                 )}
-                <p className={idx === paragraphIndex ? 'text-foreground' : 'text-muted-foreground'}>
-                  {para}
-                </p>
+                {bionicMode ? (
+                  <p
+                    className={idx === paragraphIndex ? 'text-foreground' : 'text-muted-foreground'}
+                    dangerouslySetInnerHTML={{ __html: applyBionicReading(para) }}
+                  />
+                ) : (
+                  <p className={idx === paragraphIndex ? 'text-foreground' : 'text-muted-foreground'}>
+                    {para}
+                  </p>
+                )}
+                {/* Note display */}
+                {notes[idx] && editingNote !== idx && (
+                  <div
+                    className="mt-2 text-xs text-primary/70 bg-primary/5 rounded px-2 py-1 cursor-pointer"
+                    onClick={(e) => { e.stopPropagation(); startNote(idx); }}
+                  >
+                    <MessageSquare className="h-3 w-3 inline mr-1" />{notes[idx]}
+                  </div>
+                )}
+                {/* Note editor */}
+                {editingNote === idx && (
+                  <div className="mt-2 flex gap-1" onClick={(e) => e.stopPropagation()}>
+                    <Input
+                      value={noteText}
+                      onChange={(e) => setNoteText(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveNote(); if (e.key === 'Escape') setEditingNote(null); }}
+                      placeholder={t('notePlaceholder')}
+                      className="h-7 text-xs"
+                      autoFocus
+                    />
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={saveNote}>
+                      <Check className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
               </motion.div>
             );
           })}
@@ -568,6 +700,29 @@ const PlayerPage = () => {
                 <Plus className="h-3.5 w-3.5" />
               </Button>
             </div>
+
+            {/* Bionic reading */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-9 w-9 ${bionicMode ? 'text-accent' : ''}`}
+              onClick={() => {
+                setBionicMode(!bionicMode);
+                toast({ title: !bionicMode ? t('bionicOn') : t('bionicOff'), duration: 1500 });
+              }}
+            >
+              <Type className="h-4 w-4" />
+            </Button>
+
+            {/* Add note to current paragraph */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-9 w-9 ${editingNote !== null ? 'text-accent' : ''}`}
+              onClick={() => editingNote !== null ? setEditingNote(null) : startNote(paragraphIndex)}
+            >
+              <MessageSquare className="h-4 w-4" />
+            </Button>
 
             {/* Auto-play next */}
             <Button
