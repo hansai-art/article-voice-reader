@@ -430,29 +430,53 @@ const PlayerPage = () => {
               </Select>
             </div>
 
-            {/* Voice */}
+            {/* Voice — shows browser voices or OpenAI voices depending on engine */}
             <div className="flex-1">
-              <Select
-                value={selectedVoice?.voiceURI || ''}
-                onValueChange={(uri) => {
-                  const v = voices.find((v) => v.voiceURI === uri);
-                  if (v) setSelectedVoice(v);
-                }}
-              >
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder={t('voice')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {voices.length === 0 ? (
-                    <SelectItem value="none" disabled>{t('noVoices')}</SelectItem>
-                  ) : (
-                    voices.map((v) => (
-                      <SelectItem key={v.voiceURI} value={v.voiceURI}>{v.name}</SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+              {engineType === 'openai' ? (
+                <Select value={openaiVoice} onValueChange={(v) => changeOpenAIVoice(v as any)}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder={t('ttsEngineOpenaiVoice')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {openaiVoices.map((v) => (
+                      <SelectItem key={v} value={v}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Select
+                  value={selectedVoice?.voiceURI || ''}
+                  onValueChange={(uri) => {
+                    const v = voices.find((v) => v.voiceURI === uri);
+                    if (v) setSelectedVoice(v);
+                  }}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder={t('voice')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {voices.length === 0 ? (
+                      <SelectItem value="none" disabled>{t('noVoices')}</SelectItem>
+                    ) : (
+                      voices.map((v) => (
+                        <SelectItem key={v.voiceURI} value={v.voiceURI}>{v.name}</SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
+
+            {/* TTS Engine toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-9 w-9 ${engineType === 'openai' ? 'text-accent' : ''}`}
+              onClick={() => switchEngine(engineType === 'openai' ? 'browser' : 'openai')}
+              title={engineType === 'openai' ? t('ttsEngineOpenai') : t('ttsEngineBrowser')}
+            >
+              {engineType === 'openai' ? <Bot className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            </Button>
 
             {/* Font size */}
             <div className="flex items-center gap-0.5">

@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Upload, FileText, Sparkles, Link, Loader2, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import { toast } from '@/hooks/use-toast';
 
 const AddArticlePage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t } = useLanguage();
   const [content, setContent] = useState('');
   const [fileName, setFileName] = useState('');
@@ -23,6 +24,16 @@ const AddArticlePage = () => {
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const ocrRef = useRef<HTMLInputElement>(null);
+
+  // Accept content from browser extension via URL params
+  useEffect(() => {
+    const paramContent = searchParams.get('content');
+    const paramTitle = searchParams.get('title');
+    if (paramContent) {
+      setContent(paramContent);
+      if (paramTitle) setFileName(paramTitle);
+    }
+  }, [searchParams]);
 
   const wordCount = content.length;
   const readTime = estimateReadingTime(wordCount);
