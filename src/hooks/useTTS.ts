@@ -401,6 +401,7 @@ export function useTTS(article: Article | null) {
   return {
     isPlaying,
     paragraphIndex,
+    sentenceIndex,
     paragraphs,
     progressPercent,
     voices,

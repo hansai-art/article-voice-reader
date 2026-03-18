@@ -2,10 +2,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward,
-  Pencil, Check, X, Minus, Plus, Timer, Eye, EyeOff, Sparkles, Loader2, Download,
+  Pencil, Check, X, Minus, Plus, Sparkles, Loader2, Download,
   Volume2, Bot, Bookmark, ListOrdered, List, Type, MessageSquare, Tag,
+  Settings2, Eye, EyeOff, Timer,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
@@ -15,7 +16,7 @@ import { getArticle, getArticles, saveArticle, Article, getFontSize, setFontSize
 import { useLanguage } from '@/hooks/useLanguage';
 import { useTTS } from '@/hooks/useTTS';
 import { useWakeLock } from '@/hooks/useWakeLock';
-import { estimateReadingTime, extractHeadings, applyBionicReading } from '@/lib/tts';
+import { estimateReadingTime, extractHeadings, applyBionicReading, splitIntoSentences } from '@/lib/tts';
 import { generateSummary, SummaryResult } from '@/lib/ai-summary';
 import { exportToMp3, getExportVoices, ExportVoice } from '@/lib/mp3-export';
 import { getApiKey, getApiProvider } from '@/lib/storage';
@@ -23,7 +24,7 @@ import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { toast } from '@/hooks/use-toast';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0];
-const SLEEP_OPTIONS = [0, 15, 30, 45, 60, 90]; // 0 = off
+const SLEEP_OPTIONS = [0, 15, 30, 45, 60, 90];
 const FONT_MIN = 14;
 const FONT_MAX = 24;
 
@@ -49,6 +50,7 @@ const PlayerPage = () => {
   const [noteText, setNoteText] = useState('');
   const [sleepMinutes, setSleepMinutes] = useState(0);
   const [sleepRemaining, setSleepRemaining] = useState(0);
+  const [showToolbar, setShowToolbar] = useState(false);
   const sleepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const paragraphRefs = useRef<(HTMLDivElement | null)[]>([]);
   const wakeLock = useWakeLock();
@@ -60,19 +62,24 @@ const PlayerPage = () => {
         setArticle(a);
         setBookmarks(new Set(a.bookmarks || []));
         setNotes(a.notes || {});
-      } else {
-        navigate('/');
-      }
+      } else navigate('/');
     }
   }, [id]);
 
-  // Auto-play next article when current finishes
+  const {
+    isPlaying, paragraphIndex, sentenceIndex, paragraphs, progressPercent,
+    voices, selectedVoice, setSelectedVoice, speed, changeSpeed,
+    togglePlay, skipForward, skipBackward, seekToParagraph, pause,
+    engineType, switchEngine, openaiVoice, changeOpenAIVoice, openaiVoices, setOnFinished,
+  } = useTTS(article);
+
+  // Auto-play next
   useEffect(() => {
     setOnFinished(() => {
       if (!autoPlayNext || !article) return;
-      const allArticles = getArticles();
-      const currentIdx = allArticles.findIndex((a) => a.id === article.id);
-      const next = allArticles[currentIdx + 1];
+      const all = getArticles();
+      const idx = all.findIndex((a) => a.id === article.id);
+      const next = all[idx + 1];
       if (next) {
         toast({ title: t('playingNext').replace('{title}', next.title), duration: 3000 });
         navigate(`/player/${next.id}`);
@@ -80,130 +87,63 @@ const PlayerPage = () => {
     });
   }, [autoPlayNext, article, navigate, setOnFinished, t]);
 
-  const {
-    isPlaying,
-    paragraphIndex,
-    paragraphs,
-    progressPercent,
-    voices,
-    selectedVoice,
-    setSelectedVoice,
-    speed,
-    changeSpeed,
-    togglePlay,
-    skipForward,
-    skipBackward,
-    seekToParagraph,
-    pause,
-    engineType,
-    switchEngine,
-    openaiVoice,
-    changeOpenAIVoice,
-    openaiVoices,
-    setOnFinished,
-  } = useTTS(article);
-
   // Wake lock
   useEffect(() => {
-    if (isPlaying) wakeLock.request();
-    else wakeLock.release();
+    if (isPlaying) wakeLock.request(); else wakeLock.release();
   }, [isPlaying, wakeLock]);
 
-  // Media Session API — lock screen / notification playback controls
+  // Media Session
   useEffect(() => {
     if (!('mediaSession' in navigator) || !article) return;
-
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: article.title,
-      artist: '語音朗讀器',
-      album: `${article.wordCount} 字`,
+      title: article.title, artist: '語音朗讀器', album: `${article.wordCount} 字`,
     });
-
     navigator.mediaSession.setActionHandler('play', () => togglePlay());
     navigator.mediaSession.setActionHandler('pause', () => togglePlay());
     navigator.mediaSession.setActionHandler('previoustrack', () => skipBackward());
     navigator.mediaSession.setActionHandler('nexttrack', () => skipForward());
-
     return () => {
-      navigator.mediaSession.setActionHandler('play', null);
-      navigator.mediaSession.setActionHandler('pause', null);
-      navigator.mediaSession.setActionHandler('previoustrack', null);
-      navigator.mediaSession.setActionHandler('nexttrack', null);
+      ['play', 'pause', 'previoustrack', 'nexttrack'].forEach((a) =>
+        navigator.mediaSession.setActionHandler(a as any, null)
+      );
     };
   }, [article, togglePlay, skipForward, skipBackward]);
 
-  // Update Media Session playback state
   useEffect(() => {
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
-    }
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
   }, [isPlaying]);
 
-  // Auto-pause when navigating away
-  useEffect(() => {
-    return () => {
-      pause();
-    };
-  }, [pause]);
+  useEffect(() => { return () => { pause(); }; }, [pause]);
 
   // Sleep timer
   const startSleepTimer = useCallback((minutes: number) => {
-    if (sleepTimerRef.current) {
-      clearInterval(sleepTimerRef.current);
-      sleepTimerRef.current = null;
-    }
+    if (sleepTimerRef.current) { clearInterval(sleepTimerRef.current); sleepTimerRef.current = null; }
     setSleepMinutes(minutes);
-    if (minutes === 0) {
-      setSleepRemaining(0);
-      return;
-    }
+    if (minutes === 0) { setSleepRemaining(0); return; }
     const endTime = Date.now() + minutes * 60 * 1000;
     setSleepRemaining(minutes);
     sleepTimerRef.current = setInterval(() => {
       const left = Math.ceil((endTime - Date.now()) / 60000);
-      if (left <= 0) {
-        pause();
-        setSleepMinutes(0);
-        setSleepRemaining(0);
-        if (sleepTimerRef.current) clearInterval(sleepTimerRef.current);
-        sleepTimerRef.current = null;
-      } else {
-        setSleepRemaining(left);
-      }
+      if (left <= 0) { pause(); setSleepMinutes(0); setSleepRemaining(0); clearInterval(sleepTimerRef.current!); sleepTimerRef.current = null; }
+      else setSleepRemaining(left);
     }, 10000);
   }, [pause]);
 
-  useEffect(() => {
-    return () => {
-      if (sleepTimerRef.current) clearInterval(sleepTimerRef.current);
-    };
-  }, []);
+  useEffect(() => { return () => { if (sleepTimerRef.current) clearInterval(sleepTimerRef.current); }; }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isEditingTitle) return;
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-
-      switch (e.code) {
-        case 'Space':
-          e.preventDefault();
-          togglePlay();
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          skipForward();
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          skipBackward();
-          break;
-      }
+      if (isEditingTitle || editingNote !== null) return;
+      const t = e.target as HTMLElement;
+      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+      if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+      else if (e.code === 'ArrowRight') { e.preventDefault(); skipForward(); }
+      else if (e.code === 'ArrowLeft') { e.preventDefault(); skipBackward(); }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [togglePlay, skipForward, skipBackward, isEditingTitle]);
+  }, [togglePlay, skipForward, skipBackward, isEditingTitle, editingNote]);
 
   // Auto-scroll
   useEffect(() => {
@@ -211,381 +151,216 @@ const PlayerPage = () => {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [paragraphIndex]);
 
-  // Font size
-  const changeFontSize = (delta: number) => {
-    const next = Math.max(FONT_MIN, Math.min(FONT_MAX, fontSize + delta));
-    setFontSizeState(next);
-    saveFontSize(next);
+  const changeFontSize = (d: number) => {
+    const next = Math.max(FONT_MIN, Math.min(FONT_MAX, fontSize + d));
+    setFontSizeState(next); saveFontSize(next);
   };
 
-  // Title editing
-  const startEditTitle = () => {
-    if (!article) return;
-    setEditTitle(article.title);
-    setIsEditingTitle(true);
-  };
-  const handleSaveTitle = () => {
-    if (!article || !editTitle.trim()) return;
-    const updated = { ...article, title: editTitle.trim() };
-    saveArticle(updated);
-    setArticle(updated);
-    setIsEditingTitle(false);
-  };
-  const cancelEditTitle = () => setIsEditingTitle(false);
+  // Title
+  const startEditTitle = () => { if (!article) return; setEditTitle(article.title); setIsEditingTitle(true); };
+  const handleSaveTitle = () => { if (!article || !editTitle.trim()) return; const u = { ...article, title: editTitle.trim() }; saveArticle(u); setArticle(u); setIsEditingTitle(false); };
 
   // Bookmarks
   const toggleBookmark = (idx: number) => {
     const next = new Set(bookmarks);
-    if (next.has(idx)) {
-      next.delete(idx);
-      toast({ title: t('bookmarkRemove'), duration: 1500 });
-    } else {
-      next.add(idx);
-      toast({ title: t('bookmarkAdd'), duration: 1500 });
-    }
+    next.has(idx) ? next.delete(idx) : next.add(idx);
     setBookmarks(next);
-    if (article) {
-      const updated = { ...article, bookmarks: Array.from(next) };
-      saveArticle(updated);
-      setArticle(updated);
-    }
+    if (article) { const u = { ...article, bookmarks: Array.from(next) }; saveArticle(u); setArticle(u); }
+    toast({ title: next.has(idx) ? t('bookmarkAdd') : t('bookmarkRemove'), duration: 1500 });
   };
 
   // Notes
-  const startNote = (idx: number) => {
-    setEditingNote(idx);
-    setNoteText(notes[idx] || '');
-  };
+  const startNote = (idx: number) => { setEditingNote(idx); setNoteText(notes[idx] || ''); };
   const saveNote = () => {
     if (editingNote === null || !article) return;
-    const updated = { ...notes };
-    if (noteText.trim()) {
-      updated[editingNote] = noteText.trim();
-      toast({ title: t('noteSaved'), duration: 1500 });
-    } else {
-      delete updated[editingNote];
-      toast({ title: t('noteDeleted'), duration: 1500 });
-    }
-    setNotes(updated);
-    const updatedArticle = { ...article, notes: updated };
-    saveArticle(updatedArticle);
-    setArticle(updatedArticle);
+    const u = { ...notes };
+    noteText.trim() ? (u[editingNote] = noteText.trim()) : delete u[editingNote];
+    setNotes(u);
+    const ua = { ...article, notes: u }; saveArticle(ua); setArticle(ua);
     setEditingNote(null);
+    toast({ title: noteText.trim() ? t('noteSaved') : t('noteDeleted'), duration: 1500 });
   };
 
-  // TOC
   const headings = useMemo(() => extractHeadings(paragraphs), [paragraphs]);
-
-  // Swipe gestures
   const swipeHandlers = useSwipeGesture(skipForward, skipBackward);
 
   // AI Summary
   const handleGenerateSummary = async () => {
-    if (!article) return;
-    if (!getApiKey()) {
-      toast({ title: t('summaryNoApiKey'), variant: 'destructive' });
-      return;
-    }
+    if (!article || !getApiKey()) { toast({ title: t('summaryNoApiKey'), variant: 'destructive' }); return; }
     setSummaryLoading(true);
     try {
-      const lang = document.documentElement.lang === 'en' ? 'en' : 'zh-TW';
-      const result = await generateSummary(article.content, lang as 'zh-TW' | 'en');
-      setSummary(result);
-      setShowSummary(true);
+      const result = await generateSummary(article.content, 'zh-TW');
+      setSummary(result); setShowSummary(true);
     } catch (e) {
-      const err = e instanceof Error ? e.message : 'Unknown';
-      console.error('[AI Summary]', err);
-      toast({ title: t('summaryError'), description: err, variant: 'destructive', duration: 5000 });
-    } finally {
-      setSummaryLoading(false);
-    }
+      toast({ title: t('summaryError'), description: String(e), variant: 'destructive', duration: 5000 });
+    } finally { setSummaryLoading(false); }
   };
 
-  // MP3 export
+  // MP3
   const handleExportMp3 = async (voice: ExportVoice = 'nova') => {
-    if (!article) return;
-    if (!getApiKey() || getApiProvider() !== 'openai') {
-      toast({ title: t('exportMp3NeedOpenai'), variant: 'destructive' });
-      return;
-    }
-    setMp3Loading(true);
-    setMp3Progress(0);
+    if (!article || !getApiKey() || getApiProvider() !== 'openai') { toast({ title: t('exportMp3NeedOpenai'), variant: 'destructive' }); return; }
+    setMp3Loading(true); setMp3Progress(0);
     try {
       const blob = await exportToMp3(article.content, voice, speed, (p) => setMp3Progress(p));
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${article.title}.mp3`;
-      a.click();
+      const a = document.createElement('a'); a.href = url; a.download = `${article.title}.mp3`; a.click();
       URL.revokeObjectURL(url);
       toast({ title: t('exportMp3Done') });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Unknown';
-      console.error('[MP3 Export]', msg);
-      toast({ title: t('exportMp3Error'), description: msg, variant: 'destructive' });
-    } finally {
-      setMp3Loading(false);
-    }
+      toast({ title: t('exportMp3Error'), description: String(e), variant: 'destructive' });
+    } finally { setMp3Loading(false); }
   };
 
   // Progress
   const totalTime = article ? estimateReadingTime(article.wordCount, speed) : 0;
   const elapsedTime = totalTime * (progressPercent / 100);
   const remainingTime = totalTime - elapsedTime;
+  const fmt = (m: number) => `${Math.floor(m)}:${Math.round((m - Math.floor(m)) * 60).toString().padStart(2, '0')}`;
 
-  const formatTime = (mins: number) => {
-    const m = Math.floor(mins);
-    const s = Math.round((mins - m) * 60);
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
+  // Sentence-level highlighting
+  const currentSentences = useMemo(() => {
+    if (paragraphIndex >= paragraphs.length) return [];
+    return splitIntoSentences(paragraphs[paragraphIndex]);
+  }, [paragraphs, paragraphIndex]);
 
   if (!article) return null;
 
   return (
-    <div className="min-h-screen pb-[260px]">
+    <div className="min-h-screen pb-[200px]">
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border px-6 py-4">
-        <div className="flex items-center gap-3 max-w-lg mx-auto">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate('/')}
-            className="touch-target btn-press shrink-0"
-          >
+      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border px-6 py-3">
+        <div className="flex items-center gap-2 max-w-lg mx-auto">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/')} className="touch-target btn-press shrink-0">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           {isEditingTitle ? (
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <Input
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSaveTitle();
-                  if (e.key === 'Escape') cancelEditTitle();
-                }}
-                className="h-8 text-sm"
-                autoFocus
-              />
-              <Button variant="ghost" size="icon" onClick={handleSaveTitle} className="shrink-0 h-8 w-8">
-                <Check className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={cancelEditTitle} className="shrink-0 h-8 w-8">
-                <X className="h-4 w-4" />
-              </Button>
+            <div className="flex items-center gap-1 flex-1 min-w-0">
+              <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTitle(); if (e.key === 'Escape') setIsEditingTitle(false); }}
+                className="h-8 text-sm" autoFocus />
+              <Button variant="ghost" size="icon" onClick={handleSaveTitle} className="h-8 w-8 shrink-0"><Check className="h-4 w-4" /></Button>
+              <Button variant="ghost" size="icon" onClick={() => setIsEditingTitle(false)} className="h-8 w-8 shrink-0"><X className="h-4 w-4" /></Button>
             </div>
           ) : (
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <h1 className="text-lg font-bold truncate flex-1">{article.title}</h1>
-              {/* TOC */}
+            <>
+              <h1 className="text-base font-bold truncate flex-1" onClick={startEditTitle}>{article.title}</h1>
+              {/* Header actions: TOC, Tags, Export, Summary */}
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8 text-muted-foreground">
-                    <List className="h-3.5 w-3.5" />
-                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground"><List className="h-4 w-4" /></Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-56 p-2 max-h-64 overflow-y-auto" align="end">
                   <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('tableOfContents')}</p>
-                  {headings.length === 0 ? (
-                    <p className="text-xs text-muted-foreground px-2 py-1">{t('noHeadings')}</p>
-                  ) : (
-                    headings.map((h) => (
-                      <Button
-                        key={h.index}
-                        variant={h.index === paragraphIndex ? 'secondary' : 'ghost'}
-                        className="w-full justify-start text-xs h-7 truncate"
-                        onClick={() => seekToParagraph(h.index)}
-                      >
-                        {h.text.slice(0, 40)}
-                      </Button>
-                    ))
-                  )}
+                  {headings.length === 0 ? <p className="text-xs text-muted-foreground px-2 py-1">{t('noHeadings')}</p>
+                    : headings.map((h) => (
+                      <Button key={h.index} variant={h.index === paragraphIndex ? 'secondary' : 'ghost'} className="w-full justify-start text-xs h-7 truncate"
+                        onClick={() => seekToParagraph(h.index)}>{h.text.slice(0, 40)}</Button>
+                    ))}
                 </PopoverContent>
               </Popover>
-              {/* MP3 Export */}
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8 text-muted-foreground" disabled={mp3Loading}>
-                    {mp3Loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-40 p-2" align="end">
-                  <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('exportMp3Voice')}</p>
-                  {getExportVoices().map((v) => (
-                    <Button key={v} variant="ghost" className="w-full justify-start text-sm h-8" onClick={() => handleExportMp3(v)}>
-                      {v}
-                    </Button>
-                  ))}
-                  {mp3Loading && (
-                    <p className="text-xs text-accent px-2 pt-1">
-                      {t('exportMp3Progress').replace('{progress}', String(mp3Progress))}
-                    </p>
-                  )}
-                </PopoverContent>
-              </Popover>
-              {/* Tags */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8 text-muted-foreground">
-                    <Tag className="h-3.5 w-3.5" />
-                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground"><Tag className="h-4 w-4" /></Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-52 p-3" align="end">
                   <p className="text-xs font-medium text-muted-foreground mb-2">{t('tags')}</p>
-                  {article.tags && article.tags.length > 0 && (
+                  {article.tags?.length ? (
                     <div className="flex gap-1 flex-wrap mb-2">
                       {article.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary cursor-pointer hover:bg-destructive/10 hover:text-destructive transition-colors"
-                          onClick={() => {
-                            const updated = { ...article, tags: article.tags!.filter((t) => t !== tag) };
-                            saveArticle(updated);
-                            setArticle(updated);
-                          }}
-                        >
-                          {tag} ×
-                        </span>
+                        <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary cursor-pointer hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => { const u = { ...article, tags: article.tags!.filter((t) => t !== tag) }; saveArticle(u); setArticle(u); }}>{tag} ×</span>
                       ))}
                     </div>
-                  )}
-                  <Input
-                    placeholder={t('tagPlaceholder')}
-                    className="h-7 text-xs"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const val = (e.target as HTMLInputElement).value.trim();
-                        if (!val) return;
-                        const tags = [...(article.tags || [])];
-                        if (!tags.includes(val)) tags.push(val);
-                        const updated = { ...article, tags };
-                        saveArticle(updated);
-                        setArticle(updated);
-                        (e.target as HTMLInputElement).value = '';
-                      }
-                    }}
-                  />
+                  ) : null}
+                  <Input placeholder={t('tagPlaceholder')} className="h-7 text-xs"
+                    onKeyDown={(e) => { if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (!v) return; const tags = [...(article.tags || [])]; if (!tags.includes(v)) tags.push(v); const u = { ...article, tags }; saveArticle(u); setArticle(u); (e.target as HTMLInputElement).value = ''; } }} />
                 </PopoverContent>
               </Popover>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={startEditTitle}
-                className="shrink-0 h-8 w-8 text-muted-foreground"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-            </div>
+            </>
           )}
         </div>
       </header>
 
-      {/* AI Summary section */}
-      <div className="max-w-lg mx-auto px-6 mt-4">
+      {/* AI Summary */}
+      <div className="max-w-lg mx-auto px-6 mt-3">
         {!showSummary ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleGenerateSummary}
-            disabled={summaryLoading}
-            className="btn-press gap-1.5 text-xs w-full"
-          >
-            {summaryLoading ? (
-              <><Loader2 className="h-3.5 w-3.5 animate-spin" /> {t('summaryGenerating')}</>
-            ) : (
-              <><Sparkles className="h-3.5 w-3.5" /> {t('generateSummary')}</>
-            )}
+          <Button variant="outline" size="sm" onClick={handleGenerateSummary} disabled={summaryLoading} className="btn-press gap-1.5 text-xs w-full">
+            {summaryLoading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />{t('summaryGenerating')}</>
+              : <><Sparkles className="h-3.5 w-3.5" />{t('generateSummary')}</>}
           </Button>
         ) : summary && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-xl bg-primary/5 border border-primary/20 p-4 space-y-3"
-          >
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl bg-primary/5 border border-primary/20 p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-primary flex items-center gap-1.5">
-                <Sparkles className="h-4 w-4" /> {t('summary')}
-              </h3>
-              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowSummary(false)}>
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              <h3 className="text-sm font-semibold text-primary flex items-center gap-1.5"><Sparkles className="h-4 w-4" />{t('summary')}</h3>
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowSummary(false)}><X className="h-3.5 w-3.5" /></Button>
             </div>
             <p className="text-sm leading-relaxed">{summary.summary}</p>
             {summary.keyPoints.length > 0 && (
               <div className="space-y-1">
                 <p className="text-xs font-semibold text-muted-foreground">{t('keyPoints')}</p>
-                <ul className="space-y-1">
-                  {summary.keyPoints.map((point, i) => (
-                    <li key={i} className="text-sm flex items-start gap-2">
-                      <span className="text-primary mt-0.5 shrink-0">•</span>
-                      {point}
-                    </li>
-                  ))}
-                </ul>
+                <ul className="space-y-1">{summary.keyPoints.map((p, i) => (
+                  <li key={i} className="text-sm flex items-start gap-2"><span className="text-primary mt-0.5">•</span>{p}</li>
+                ))}</ul>
               </div>
             )}
           </motion.div>
         )}
       </div>
 
-      {/* Article content */}
-      <main className="max-w-lg mx-auto px-6 mt-4" {...swipeHandlers}>
-        <div className="space-y-4 prose-reader leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
+      {/* Article content with sentence-level highlighting */}
+      <main className="max-w-lg mx-auto px-6 mt-3" {...swipeHandlers}>
+        <div className="space-y-3 prose-reader leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
           {paragraphs.map((para, idx) => {
             const distance = Math.abs(idx - paragraphIndex);
-            const immersiveOpacity = immersiveMode
-              ? distance === 0 ? 'opacity-100' : distance === 1 ? 'opacity-30' : 'opacity-5 pointer-events-none'
+            const immersiveClass = immersiveMode
+              ? distance === 0 ? '' : distance === 1 ? 'opacity-30' : 'opacity-5 pointer-events-none'
               : '';
             const isBookmarked = bookmarks.has(idx);
+            const isCurrentPara = idx === paragraphIndex;
+            const sentences = isCurrentPara ? currentSentences : [];
+
             return (
               <motion.div
                 key={idx}
                 ref={(el) => { paragraphRefs.current[idx] = el; }}
-                className={`px-4 py-3 rounded-lg cursor-pointer transition-all duration-300 relative ${
-                  idx === paragraphIndex
-                    ? 'bg-accent/10 border-l-4 border-accent'
-                    : isBookmarked
-                      ? 'border-l-4 border-primary/40 bg-primary/5'
-                      : 'border-l-4 border-transparent hover:bg-muted/50'
-                } ${immersiveOpacity}`}
+                className={`px-4 py-2.5 rounded-lg cursor-pointer transition-all duration-300 relative ${
+                  isCurrentPara ? 'bg-accent/8 border-l-4 border-accent'
+                    : isBookmarked ? 'border-l-4 border-primary/40 bg-primary/5'
+                      : 'border-l-4 border-transparent hover:bg-muted/30'
+                } ${immersiveClass}`}
                 onClick={() => seekToParagraph(idx)}
                 onDoubleClick={() => toggleBookmark(idx)}
               >
-                {isBookmarked && (
-                  <Bookmark className="absolute top-2 right-2 h-3.5 w-3.5 text-primary/50 fill-primary/30" />
-                )}
-                {bionicMode ? (
-                  <p
-                    className={idx === paragraphIndex ? 'text-foreground' : 'text-muted-foreground'}
-                    dangerouslySetInnerHTML={{ __html: applyBionicReading(para) }}
-                  />
-                ) : (
-                  <p className={idx === paragraphIndex ? 'text-foreground' : 'text-muted-foreground'}>
-                    {para}
+                {isBookmarked && <Bookmark className="absolute top-2 right-2 h-3 w-3 text-primary/40 fill-primary/20" />}
+
+                {/* Sentence-level highlighting for current paragraph */}
+                {isCurrentPara && sentences.length > 1 ? (
+                  <p className="text-foreground">
+                    {sentences.map((s, si) => (
+                      <span key={si} className={`transition-colors duration-200 ${
+                        si === sentenceIndex ? 'bg-accent/20 rounded px-0.5' : si < sentenceIndex ? 'opacity-60' : ''
+                      }`}>{s}</span>
+                    ))}
                   </p>
+                ) : bionicMode ? (
+                  <p className={isCurrentPara ? 'text-foreground' : 'text-muted-foreground'}
+                    dangerouslySetInnerHTML={{ __html: applyBionicReading(para) }} />
+                ) : (
+                  <p className={isCurrentPara ? 'text-foreground' : 'text-muted-foreground'}>{para}</p>
                 )}
-                {/* Note display */}
+
                 {notes[idx] && editingNote !== idx && (
-                  <div
-                    className="mt-2 text-xs text-primary/70 bg-primary/5 rounded px-2 py-1 cursor-pointer"
-                    onClick={(e) => { e.stopPropagation(); startNote(idx); }}
-                  >
+                  <div className="mt-1.5 text-xs text-primary/60 bg-primary/5 rounded px-2 py-1 cursor-pointer"
+                    onClick={(e) => { e.stopPropagation(); startNote(idx); }}>
                     <MessageSquare className="h-3 w-3 inline mr-1" />{notes[idx]}
                   </div>
                 )}
-                {/* Note editor */}
                 {editingNote === idx && (
-                  <div className="mt-2 flex gap-1" onClick={(e) => e.stopPropagation()}>
-                    <Input
-                      value={noteText}
-                      onChange={(e) => setNoteText(e.target.value)}
+                  <div className="mt-1.5 flex gap-1" onClick={(e) => e.stopPropagation()}>
+                    <Input value={noteText} onChange={(e) => setNoteText(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') saveNote(); if (e.key === 'Escape') setEditingNote(null); }}
-                      placeholder={t('notePlaceholder')}
-                      className="h-7 text-xs"
-                      autoFocus
-                    />
-                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={saveNote}>
-                      <Check className="h-3 w-3" />
-                    </Button>
+                      placeholder={t('notePlaceholder')} className="h-7 text-xs" autoFocus />
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={saveNote}><Check className="h-3 w-3" /></Button>
                   </div>
                 )}
               </motion.div>
@@ -594,192 +369,128 @@ const PlayerPage = () => {
         </div>
       </main>
 
-      {/* Fixed Bottom Dock */}
-      <div className="dock z-20 px-6 py-4 pb-[env(safe-area-inset-bottom,16px)]">
-        <div className="max-w-lg mx-auto space-y-3">
-          {/* Progress slider */}
-          <div className="space-y-1">
-            <Slider
-              value={[paragraphIndex]}
-              max={Math.max(paragraphs.length - 1, 1)}
-              step={1}
-              onValueChange={([v]) => seekToParagraph(v)}
-              className="touch-target"
-            />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{formatTime(elapsedTime)}</span>
+      {/* Redesigned Bottom Dock — clean, professional */}
+      <div className="dock z-20 px-6 py-3 pb-[env(safe-area-inset-bottom,12px)]">
+        <div className="max-w-lg mx-auto space-y-2.5">
+          {/* Progress */}
+          <div className="space-y-0.5">
+            <Slider value={[paragraphIndex]} max={Math.max(paragraphs.length - 1, 1)} step={1}
+              onValueChange={([v]) => seekToParagraph(v)} className="touch-target" />
+            <div className="flex justify-between text-[11px] text-muted-foreground">
+              <span>{fmt(elapsedTime)}</span>
               <span>{t('paragraphCount').replace('{current}', String(paragraphIndex + 1)).replace('{total}', String(paragraphs.length))} · {progressPercent}%</span>
-              <span>-{formatTime(remainingTime)}</span>
+              <span>-{fmt(remainingTime)}</span>
             </div>
           </div>
 
-          {/* Transport controls */}
-          <div className="flex items-center justify-center gap-4">
-            <Button variant="ghost" size="icon" onClick={skipBackward} className="touch-target btn-press">
-              <SkipBack className="h-6 w-6" />
-            </Button>
-            <Button onClick={togglePlay} className="h-14 w-14 rounded-full btn-press" size="icon">
-              {isPlaying ? <Pause className="h-7 w-7" /> : <Play className="h-7 w-7 ml-0.5" />}
-            </Button>
-            <Button variant="ghost" size="icon" onClick={skipForward} className="touch-target btn-press">
-              <SkipForward className="h-6 w-6" />
-            </Button>
-          </div>
+          {/* Main controls row: Speed | Skip | Play | Skip | Voice | More */}
+          <div className="flex items-center gap-1">
+            {/* Speed pill */}
+            <Select value={speed.toString()} onValueChange={(v) => changeSpeed(parseFloat(v))}>
+              <SelectTrigger className="h-10 w-16 text-xs font-medium rounded-full border-0 bg-muted/50"><SelectValue /></SelectTrigger>
+              <SelectContent>{SPEED_OPTIONS.map((s) => <SelectItem key={s} value={s.toString()}>{s}x</SelectItem>)}</SelectContent>
+            </Select>
 
-          {/* Speed, Voice, Font, Sleep */}
-          <div className="flex items-center gap-2">
-            {/* Speed */}
-            <div className="flex-1">
-              <Select value={speed.toString()} onValueChange={(v) => changeSpeed(parseFloat(v))}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder={t('speed')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {SPEED_OPTIONS.map((s) => (
-                    <SelectItem key={s} value={s.toString()}>{s}x</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex-1 flex items-center justify-center gap-2">
+              <Button variant="ghost" size="icon" onClick={skipBackward} className="h-10 w-10 btn-press"><SkipBack className="h-5 w-5" /></Button>
+              <Button onClick={togglePlay} className="h-14 w-14 rounded-full btn-press shadow-lg" size="icon">
+                {isPlaying ? <Pause className="h-7 w-7" /> : <Play className="h-7 w-7 ml-0.5" />}
+              </Button>
+              <Button variant="ghost" size="icon" onClick={skipForward} className="h-10 w-10 btn-press"><SkipForward className="h-5 w-5" /></Button>
             </div>
 
-            {/* Voice — shows browser voices or OpenAI voices depending on engine */}
-            <div className="flex-1">
+            {/* Voice pill */}
+            <div className="w-16">
               {engineType === 'openai' ? (
                 <Select value={openaiVoice} onValueChange={(v) => changeOpenAIVoice(v as any)}>
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue placeholder={t('ttsEngineOpenaiVoice')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {openaiVoices.map((v) => (
-                      <SelectItem key={v} value={v}>{v}</SelectItem>
-                    ))}
-                  </SelectContent>
+                  <SelectTrigger className="h-10 text-xs font-medium rounded-full border-0 bg-muted/50"><SelectValue /></SelectTrigger>
+                  <SelectContent>{openaiVoices.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
                 </Select>
               ) : (
-                <Select
-                  value={selectedVoice?.voiceURI || ''}
-                  onValueChange={(uri) => {
-                    const v = voices.find((v) => v.voiceURI === uri);
-                    if (v) setSelectedVoice(v);
-                  }}
-                >
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue placeholder={t('voice')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {voices.length === 0 ? (
-                      <SelectItem value="none" disabled>{t('noVoices')}</SelectItem>
-                    ) : (
-                      voices.map((v) => (
-                        <SelectItem key={v.voiceURI} value={v.voiceURI}>{v.name}</SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
+                <Select value={selectedVoice?.voiceURI || ''} onValueChange={(uri) => { const v = voices.find((v) => v.voiceURI === uri); if (v) setSelectedVoice(v); }}>
+                  <SelectTrigger className="h-10 text-[10px] font-medium rounded-full border-0 bg-muted/50 truncate"><SelectValue placeholder="語音" /></SelectTrigger>
+                  <SelectContent>{voices.length === 0 ? <SelectItem value="none" disabled>{t('noVoices')}</SelectItem>
+                    : voices.map((v) => <SelectItem key={v.voiceURI} value={v.voiceURI}>{v.name}</SelectItem>)}</SelectContent>
                 </Select>
               )}
             </div>
 
-            {/* TTS Engine toggle */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`h-9 w-9 ${engineType === 'openai' ? 'text-accent' : ''}`}
-              onClick={() => switchEngine(engineType === 'openai' ? 'browser' : 'openai')}
-              title={engineType === 'openai' ? t('ttsEngineOpenai') : t('ttsEngineBrowser')}
-            >
-              {engineType === 'openai' ? <Bot className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            {/* More settings toggle */}
+            <Button variant="ghost" size="icon" className={`h-10 w-10 ${showToolbar ? 'text-accent' : ''}`}
+              onClick={() => setShowToolbar(!showToolbar)}>
+              <Settings2 className="h-5 w-5" />
             </Button>
-
-            {/* Font size */}
-            <div className="flex items-center gap-0.5">
-              <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => changeFontSize(-1)} disabled={fontSize <= FONT_MIN}>
-                <Minus className="h-3.5 w-3.5" />
-              </Button>
-              <span className="text-xs text-muted-foreground w-4 text-center">{fontSize}</span>
-              <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => changeFontSize(1)} disabled={fontSize >= FONT_MAX}>
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-
-            {/* Bionic reading */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`h-9 w-9 ${bionicMode ? 'text-accent' : ''}`}
-              onClick={() => {
-                setBionicMode(!bionicMode);
-                toast({ title: !bionicMode ? t('bionicOn') : t('bionicOff'), duration: 1500 });
-              }}
-            >
-              <Type className="h-4 w-4" />
-            </Button>
-
-            {/* Add note to current paragraph */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`h-9 w-9 ${editingNote !== null ? 'text-accent' : ''}`}
-              onClick={() => editingNote !== null ? setEditingNote(null) : startNote(paragraphIndex)}
-            >
-              <MessageSquare className="h-4 w-4" />
-            </Button>
-
-            {/* Auto-play next */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`h-9 w-9 ${autoPlayNext ? 'text-accent' : ''}`}
-              onClick={() => {
-                setAutoPlayNext(!autoPlayNext);
-                toast({ title: !autoPlayNext ? t('autoPlayNextOn') : t('autoPlayNextOff'), duration: 1500 });
-              }}
-            >
-              <ListOrdered className="h-4 w-4" />
-            </Button>
-
-            {/* Immersive mode */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`h-9 w-9 ${immersiveMode ? 'text-accent' : ''}`}
-              onClick={() => setImmersiveMode(!immersiveMode)}
-            >
-              {immersiveMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </Button>
-
-            {/* Sleep timer */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`h-9 w-9 ${sleepMinutes > 0 ? 'text-accent' : ''}`}
-                >
-                  <Timer className="h-4 w-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-48 p-2" align="end">
-                <div className="space-y-1">
-                  <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('sleepTimer')}</p>
-                  {SLEEP_OPTIONS.map((m) => (
-                    <Button
-                      key={m}
-                      variant={sleepMinutes === m ? 'secondary' : 'ghost'}
-                      className="w-full justify-start text-sm h-8"
-                      onClick={() => startSleepTimer(m)}
-                    >
-                      {m === 0 ? t('sleepTimerOff') : `${m} ${t('sleepTimerSet')}`}
-                    </Button>
-                  ))}
-                  {sleepRemaining > 0 && (
-                    <p className="text-xs text-accent px-2 pt-1">
-                      {t('sleepTimerActive').replace('{min}', String(sleepRemaining))}
-                    </p>
-                  )}
-                </div>
-              </PopoverContent>
-            </Popover>
           </div>
+
+          {/* Expandable toolbar — only shows when toggled */}
+          <AnimatePresence>
+            {showToolbar && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="flex items-center justify-between gap-1 pt-1 border-t border-border">
+                  {/* TTS engine */}
+                  <Button variant="ghost" size="icon" className={`h-9 w-9 ${engineType === 'openai' ? 'text-accent' : ''}`}
+                    onClick={() => switchEngine(engineType === 'openai' ? 'browser' : 'openai')}>
+                    {engineType === 'openai' ? <Bot className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                  </Button>
+                  {/* Font size */}
+                  <div className="flex items-center">
+                    <Button variant="ghost" size="icon" className="h-9 w-8" onClick={() => changeFontSize(-1)} disabled={fontSize <= FONT_MIN}><Minus className="h-3 w-3" /></Button>
+                    <span className="text-[10px] text-muted-foreground w-5 text-center">{fontSize}</span>
+                    <Button variant="ghost" size="icon" className="h-9 w-8" onClick={() => changeFontSize(1)} disabled={fontSize >= FONT_MAX}><Plus className="h-3 w-3" /></Button>
+                  </div>
+                  {/* Bionic */}
+                  <Button variant="ghost" size="icon" className={`h-9 w-9 ${bionicMode ? 'text-accent' : ''}`}
+                    onClick={() => setBionicMode(!bionicMode)}><Type className="h-4 w-4" /></Button>
+                  {/* Note */}
+                  <Button variant="ghost" size="icon" className="h-9 w-9"
+                    onClick={() => editingNote !== null ? setEditingNote(null) : startNote(paragraphIndex)}><MessageSquare className="h-4 w-4" /></Button>
+                  {/* Immersive */}
+                  <Button variant="ghost" size="icon" className={`h-9 w-9 ${immersiveMode ? 'text-accent' : ''}`}
+                    onClick={() => setImmersiveMode(!immersiveMode)}>{immersiveMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</Button>
+                  {/* Auto-play */}
+                  <Button variant="ghost" size="icon" className={`h-9 w-9 ${autoPlayNext ? 'text-accent' : ''}`}
+                    onClick={() => { setAutoPlayNext(!autoPlayNext); toast({ title: !autoPlayNext ? t('autoPlayNextOn') : t('autoPlayNextOff'), duration: 1500 }); }}>
+                    <ListOrdered className="h-4 w-4" />
+                  </Button>
+                  {/* Sleep */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="icon" className={`h-9 w-9 ${sleepMinutes > 0 ? 'text-accent' : ''}`}><Timer className="h-4 w-4" /></Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-44 p-2" align="end">
+                      <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('sleepTimer')}</p>
+                      {SLEEP_OPTIONS.map((m) => (
+                        <Button key={m} variant={sleepMinutes === m ? 'secondary' : 'ghost'} className="w-full justify-start text-sm h-8"
+                          onClick={() => startSleepTimer(m)}>{m === 0 ? t('sleepTimerOff') : `${m} ${t('sleepTimerSet')}`}</Button>
+                      ))}
+                      {sleepRemaining > 0 && <p className="text-xs text-accent px-2 pt-1">{t('sleepTimerActive').replace('{min}', String(sleepRemaining))}</p>}
+                    </PopoverContent>
+                  </Popover>
+                  {/* MP3 Export */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-9 w-9" disabled={mp3Loading}>
+                        {mp3Loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-40 p-2" align="end">
+                      <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('exportMp3Voice')}</p>
+                      {getExportVoices().map((v) => (
+                        <Button key={v} variant="ghost" className="w-full justify-start text-sm h-8" onClick={() => handleExportMp3(v)}>{v}</Button>
+                      ))}
+                      {mp3Loading && <p className="text-xs text-accent px-2 pt-1">{t('exportMp3Progress').replace('{progress}', String(mp3Progress))}</p>}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>
