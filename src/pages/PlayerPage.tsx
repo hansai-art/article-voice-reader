@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward,
-  Pencil, Check, X, Minus, Plus, Timer, Eye, EyeOff, Sparkles, Loader2,
+  Pencil, Check, X, Minus, Plus, Timer, Eye, EyeOff, Sparkles, Loader2, Download,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,8 @@ import { useTTS } from '@/hooks/useTTS';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { estimateReadingTime } from '@/lib/tts';
 import { generateSummary, SummaryResult } from '@/lib/ai-summary';
-import { getApiKey } from '@/lib/storage';
+import { exportToMp3, getExportVoices, ExportVoice } from '@/lib/mp3-export';
+import { getApiKey, getApiProvider } from '@/lib/storage';
 import { toast } from '@/hooks/use-toast';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0];
@@ -36,6 +37,8 @@ const PlayerPage = () => {
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
+  const [mp3Loading, setMp3Loading] = useState(false);
+  const [mp3Progress, setMp3Progress] = useState(0);
   const [sleepMinutes, setSleepMinutes] = useState(0);
   const [sleepRemaining, setSleepRemaining] = useState(0);
   const sleepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -189,6 +192,33 @@ const PlayerPage = () => {
     }
   };
 
+  // MP3 export
+  const handleExportMp3 = async (voice: ExportVoice = 'nova') => {
+    if (!article) return;
+    if (!getApiKey() || getApiProvider() !== 'openai') {
+      toast({ title: t('exportMp3NeedOpenai'), variant: 'destructive' });
+      return;
+    }
+    setMp3Loading(true);
+    setMp3Progress(0);
+    try {
+      const blob = await exportToMp3(article.content, voice, speed, (p) => setMp3Progress(p));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${article.title}.mp3`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: t('exportMp3Done') });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unknown';
+      console.error('[MP3 Export]', msg);
+      toast({ title: t('exportMp3Error'), description: msg, variant: 'destructive' });
+    } finally {
+      setMp3Loading(false);
+    }
+  };
+
   // Progress
   const totalTime = article ? estimateReadingTime(article.wordCount, speed) : 0;
   const elapsedTime = totalTime * (progressPercent / 100);
@@ -237,6 +267,26 @@ const PlayerPage = () => {
           ) : (
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <h1 className="text-lg font-bold truncate flex-1">{article.title}</h1>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8 text-muted-foreground" disabled={mp3Loading}>
+                    {mp3Loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-40 p-2" align="end">
+                  <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('exportMp3Voice')}</p>
+                  {getExportVoices().map((v) => (
+                    <Button key={v} variant="ghost" className="w-full justify-start text-sm h-8" onClick={() => handleExportMp3(v)}>
+                      {v}
+                    </Button>
+                  ))}
+                  {mp3Loading && (
+                    <p className="text-xs text-accent px-2 pt-1">
+                      {t('exportMp3Progress').replace('{progress}', String(mp3Progress))}
+                    </p>
+                  )}
+                </PopoverContent>
+              </Popover>
               <Button
                 variant="ghost"
                 size="icon"
