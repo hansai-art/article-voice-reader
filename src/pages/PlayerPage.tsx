@@ -4,7 +4,7 @@ import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward,
   Pencil, Check, X, Minus, Plus, Sparkles, Loader2, Download,
   Volume2, Bot, Bookmark, ListOrdered, List, Type, MessageSquare, Tag,
-  Settings2, Eye, EyeOff, Timer,
+  Settings2, Eye, EyeOff, Timer, Palette, Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { getArticle, getArticles, saveArticle, Article, getFontSize, setFontSize as saveFontSize } from '@/lib/storage';
+import { getArticle, getArticles, saveArticle, Article, getFontSize, setFontSize as saveFontSize, getReadingTheme, setReadingTheme as saveReadingTheme, ReadingTheme } from '@/lib/storage';
 import { useLanguage } from '@/hooks/useLanguage';
 import { useTTS } from '@/hooks/useTTS';
 import { useWakeLock } from '@/hooks/useWakeLock';
@@ -51,6 +51,8 @@ const PlayerPage = () => {
   const [sleepMinutes, setSleepMinutes] = useState(0);
   const [sleepRemaining, setSleepRemaining] = useState(0);
   const [showToolbar, setShowToolbar] = useState(false);
+  const [readingTheme, setReadingThemeState] = useState<ReadingTheme>(() => getReadingTheme());
+  const [rsvpMode, setRsvpMode] = useState(false);
   const sleepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const paragraphRefs = useRef<(HTMLDivElement | null)[]>([]);
   const wakeLock = useWakeLock();
@@ -307,8 +309,23 @@ const PlayerPage = () => {
         )}
       </div>
 
+      {/* Side progress bar */}
+      <div className="reading-progress-bar">
+        <div className="reading-progress-fill" style={{ height: `${progressPercent}%` }} />
+      </div>
+
+      {/* RSVP overlay */}
+      {rsvpMode && isPlaying && (
+        <div className="rsvp-overlay" onClick={() => setRsvpMode(false)}>
+          <div className="text-center">
+            <p className="rsvp-text">{currentSentences[sentenceIndex] || ''}</p>
+            <p className="text-sm text-muted-foreground mt-8">{t('rsvpExit')}</p>
+          </div>
+        </div>
+      )}
+
       {/* Article content with sentence-level highlighting */}
-      <main className="max-w-lg mx-auto px-6 mt-3" {...swipeHandlers}>
+      <main className={`max-w-lg mx-auto px-6 mt-3 rounded-lg ${readingTheme !== 'default' ? `reading-theme-${readingTheme} py-4` : ''}`} {...swipeHandlers}>
         <div className="space-y-3 prose-reader leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
           {paragraphs.map((para, idx) => {
             const distance = Math.abs(idx - paragraphIndex);
@@ -444,9 +461,31 @@ const PlayerPage = () => {
                     <span className="text-[10px] text-muted-foreground w-5 text-center">{fontSize}</span>
                     <Button variant="ghost" size="icon" className="h-9 w-8" onClick={() => changeFontSize(1)} disabled={fontSize >= FONT_MAX}><Plus className="h-3 w-3" /></Button>
                   </div>
+                  {/* Reading theme */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-9 w-9"><Palette className="h-4 w-4" /></Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-36 p-2" align="start">
+                      <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('readingTheme')}</p>
+                      {(['default', 'sepia', 'cream', 'dark', 'amoled'] as ReadingTheme[]).map((th) => (
+                        <Button key={th} variant={readingTheme === th ? 'secondary' : 'ghost'}
+                          className="w-full justify-start text-sm h-7"
+                          onClick={() => { setReadingThemeState(th); saveReadingTheme(th); }}>
+                          <span className={`inline-block w-3 h-3 rounded-full mr-2 border ${
+                            th === 'default' ? 'bg-background' : th === 'sepia' ? 'bg-[#f4ecd8]' : th === 'cream' ? 'bg-[#fdf6e3]' : th === 'dark' ? 'bg-[#1a1a2e]' : 'bg-black'
+                          }`} />
+                          {t(`theme${th.charAt(0).toUpperCase() + th.slice(1)}` as any)}
+                        </Button>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
                   {/* Bionic */}
                   <Button variant="ghost" size="icon" className={`h-9 w-9 ${bionicMode ? 'text-accent' : ''}`}
                     onClick={() => setBionicMode(!bionicMode)}><Type className="h-4 w-4" /></Button>
+                  {/* RSVP */}
+                  <Button variant="ghost" size="icon" className={`h-9 w-9 ${rsvpMode ? 'text-accent' : ''}`}
+                    onClick={() => setRsvpMode(!rsvpMode)}><Zap className="h-4 w-4" /></Button>
                   {/* Note */}
                   <Button variant="ghost" size="icon" className="h-9 w-9"
                     onClick={() => editingNote !== null ? setEditingNote(null) : startNote(paragraphIndex)}><MessageSquare className="h-4 w-4" /></Button>

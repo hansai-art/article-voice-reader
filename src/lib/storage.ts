@@ -98,6 +98,19 @@ export function setFontSize(size: number) {
   localStorage.setItem(FONT_SIZE_KEY, size.toString());
 }
 
+// Reading theme
+const READING_THEME_KEY = 'article-reader-reading-theme';
+
+export type ReadingTheme = 'default' | 'sepia' | 'cream' | 'dark' | 'amoled';
+
+export function getReadingTheme(): ReadingTheme {
+  return (localStorage.getItem(READING_THEME_KEY) as ReadingTheme) || 'default';
+}
+
+export function setReadingTheme(theme: ReadingTheme) {
+  localStorage.setItem(READING_THEME_KEY, theme);
+}
+
 // API Key storage
 const API_KEY_KEY = 'article-reader-api-key';
 const API_PROVIDER_KEY = 'article-reader-api-provider';

@@ -32,7 +32,22 @@ const AddArticlePage = () => {
     if (paramContent) {
       setContent(paramContent);
       if (paramTitle) setFileName(paramTitle);
+      return;
     }
+
+    // Auto-detect clipboard content
+    (async () => {
+      try {
+        if (!navigator.clipboard?.readText) return;
+        const clipText = await navigator.clipboard.readText();
+        if (clipText && clipText.trim().length > 100) {
+          setContent(clipText);
+          toast({ title: t('clipboardDetected'), duration: 3000 });
+        }
+      } catch {
+        // Clipboard permission denied — that's fine
+      }
+    })();
   }, [searchParams]);
 
   const wordCount = content.length;
