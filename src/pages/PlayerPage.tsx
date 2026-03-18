@@ -82,6 +82,36 @@ const PlayerPage = () => {
     else wakeLock.release();
   }, [isPlaying, wakeLock]);
 
+  // Media Session API — lock screen / notification playback controls
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !article) return;
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: article.title,
+      artist: '語音朗讀器',
+      album: `${article.wordCount} 字`,
+    });
+
+    navigator.mediaSession.setActionHandler('play', () => togglePlay());
+    navigator.mediaSession.setActionHandler('pause', () => togglePlay());
+    navigator.mediaSession.setActionHandler('previoustrack', () => skipBackward());
+    navigator.mediaSession.setActionHandler('nexttrack', () => skipForward());
+
+    return () => {
+      navigator.mediaSession.setActionHandler('play', null);
+      navigator.mediaSession.setActionHandler('pause', null);
+      navigator.mediaSession.setActionHandler('previoustrack', null);
+      navigator.mediaSession.setActionHandler('nexttrack', null);
+    };
+  }, [article, togglePlay, skipForward, skipBackward]);
+
+  // Update Media Session playback state
+  useEffect(() => {
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    }
+  }, [isPlaying]);
+
   // Auto-pause when navigating away
   useEffect(() => {
     return () => {

@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Globe, Trash2, BookOpen, Sun, Moon, Download, Upload, Settings } from 'lucide-react';
+import { Plus, Globe, Trash2, BookOpen, Sun, Moon, Download, Upload, Settings, Search, ArrowUpDown, BarChart3 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,11 +18,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   getArticles, deleteArticle, getLastPlayedId, getArticle,
-  exportArticles, importArticles, Article,
+  exportArticles, importArticles, Article, getReadingStats,
 } from '@/lib/storage';
 import { useLanguage } from '@/hooks/useLanguage';
 import { formatTimeAgo } from '@/lib/i18n';
 import { toast } from '@/hooks/use-toast';
+
+type SortMode = 'recent' | 'created' | 'progress' | 'title';
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -30,6 +33,9 @@ const HomePage = () => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [lastPlayedArticle, setLastPlayedArticle] = useState<Article | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortMode, setSortMode] = useState<SortMode>('recent');
+  const [showStats, setShowStats] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -48,8 +54,12 @@ const HomePage = () => {
     setDeleteTarget(null);
   };
 
-  const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
+  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+
+  const cycleSortMode = () => {
+    const modes: SortMode[] = ['recent', 'created', 'progress', 'title'];
+    const idx = modes.indexOf(sortMode);
+    setSortMode(modes[(idx + 1) % modes.length]);
   };
 
   const handleExport = () => {
@@ -82,7 +92,6 @@ const HomePage = () => {
     } catch {
       toast({ title: t('importError'), variant: 'destructive' });
     }
-    // Reset input so the same file can be imported again
     if (importRef.current) importRef.current.value = '';
   };
 
@@ -90,6 +99,40 @@ const HomePage = () => {
     if (!a.content) return 0;
     const paras = a.content.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
     return paras.length > 0 ? Math.round((a.paragraphIndex / paras.length) * 100) : 0;
+  };
+
+  // Filter + sort
+  const filteredArticles = useMemo(() => {
+    let list = articles;
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter((a) =>
+        a.title.toLowerCase().includes(q) ||
+        a.content.slice(0, 500).toLowerCase().includes(q)
+      );
+    }
+
+    // Sort
+    return [...list].sort((a, b) => {
+      switch (sortMode) {
+        case 'recent': return (b.lastPlayedAt || b.createdAt) - (a.lastPlayedAt || a.createdAt);
+        case 'created': return b.createdAt - a.createdAt;
+        case 'progress': return progressOf(b) - progressOf(a);
+        case 'title': return a.title.localeCompare(b.title);
+        default: return 0;
+      }
+    });
+  }, [articles, searchQuery, sortMode]);
+
+  // Reading stats
+  const stats = getReadingStats();
+  const sortLabel: Record<SortMode, string> = {
+    recent: lang === 'zh-TW' ? '最近播放' : 'Recent',
+    created: lang === 'zh-TW' ? '建立時間' : 'Created',
+    progress: lang === 'zh-TW' ? '進度' : 'Progress',
+    title: lang === 'zh-TW' ? '標題' : 'Title',
   };
 
   return (
@@ -118,36 +161,60 @@ const HomePage = () => {
       <main className="max-w-lg mx-auto px-6 mt-4 space-y-4">
         {/* Action buttons */}
         <div className="flex gap-2">
-          <Button
-            className="flex-1 touch-target btn-press text-base font-semibold gap-2"
-            size="lg"
-            onClick={() => navigate('/add')}
-          >
+          <Button className="flex-1 touch-target btn-press text-base font-semibold gap-2" size="lg" onClick={() => navigate('/add')}>
             <Plus className="h-5 w-5" />
             {t('addArticle')}
           </Button>
           <Button variant="outline" size="lg" onClick={handleExport} className="touch-target btn-press px-3">
             <Download className="h-5 w-5" />
           </Button>
-          <Button
-            variant="outline"
-            size="lg"
-            onClick={() => importRef.current?.click()}
-            className="touch-target btn-press px-3"
-          >
+          <Button variant="outline" size="lg" onClick={() => importRef.current?.click()} className="touch-target btn-press px-3">
             <Upload className="h-5 w-5" />
           </Button>
-          <input
-            ref={importRef}
-            type="file"
-            accept=".json"
-            className="hidden"
-            onChange={handleImport}
-          />
+          <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
         </div>
 
+        {/* Reading stats banner */}
+        {articles.length > 0 && (
+          <div
+            className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-muted/50 cursor-pointer"
+            onClick={() => setShowStats(!showStats)}
+          >
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <BarChart3 className="h-4 w-4" />
+              <span>{articles.length} {t('characters').replace('字', '篇')}</span>
+              <span>·</span>
+              <span>{articles.reduce((sum, a) => sum + a.wordCount, 0).toLocaleString()} {t('characters')}</span>
+            </div>
+            {showStats && stats.totalMinutesListened > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {Math.round(stats.totalMinutesListened)} {t('minutes')}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Search + Sort */}
+        {articles.length > 2 && (
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={lang === 'zh-TW' ? '搜尋文章...' : 'Search articles...'}
+                className="pl-9 h-9"
+              />
+            </div>
+            <Button variant="outline" size="sm" className="h-9 gap-1 text-xs shrink-0" onClick={cycleSortMode}>
+              <ArrowUpDown className="h-3.5 w-3.5" />
+              {sortLabel[sortMode]}
+            </Button>
+          </div>
+        )}
+
         {/* Resume Reading banner */}
-        {lastPlayedArticle && (
+        {lastPlayedArticle && !searchQuery && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
             <Card
               className="p-4 cursor-pointer btn-press border-accent/30 bg-accent/5 hover:bg-accent/10 transition-colors"
@@ -168,15 +235,15 @@ const HomePage = () => {
         )}
 
         {/* Article list */}
-        {articles.length === 0 ? (
+        {filteredArticles.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground">
             <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-30" />
-            <p className="font-medium">{t('noArticles')}</p>
-            <p className="text-sm mt-1">{t('noArticlesHint')}</p>
+            <p className="font-medium">{searchQuery ? (lang === 'zh-TW' ? '找不到符合的文章' : 'No matching articles') : t('noArticles')}</p>
+            {!searchQuery && <p className="text-sm mt-1">{t('noArticlesHint')}</p>}
           </div>
         ) : (
           <AnimatePresence>
-            {articles.map((article) => (
+            {filteredArticles.map((article) => (
               <motion.div
                 key={article.id}
                 layout

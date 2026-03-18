@@ -139,6 +139,34 @@ export function setOpenAIVoicePref(voice: string) {
   localStorage.setItem(OPENAI_VOICE_KEY, voice);
 }
 
+// Reading statistics
+const STATS_KEY = 'article-reader-stats';
+
+export interface ReadingStats {
+  totalArticles: number;
+  completedArticles: number;
+  totalMinutesListened: number;
+  lastSessionDate: string;
+}
+
+export function getReadingStats(): ReadingStats {
+  try {
+    return JSON.parse(localStorage.getItem(STATS_KEY) || '{}') as ReadingStats;
+  } catch {
+    return { totalArticles: 0, completedArticles: 0, totalMinutesListened: 0, lastSessionDate: '' };
+  }
+}
+
+export function updateReadingStats(minutesListened: number, completed: boolean = false) {
+  const stats = getReadingStats();
+  const articles = getArticles();
+  stats.totalArticles = articles.length;
+  stats.totalMinutesListened = (stats.totalMinutesListened || 0) + minutesListened;
+  if (completed) stats.completedArticles = (stats.completedArticles || 0) + 1;
+  stats.lastSessionDate = new Date().toISOString().slice(0, 10);
+  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+}
+
 // Export all articles as JSON
 export function exportArticles(): string {
   const data = {

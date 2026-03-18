@@ -372,3 +372,19 @@ export function cleanText(text: string): string {
 
   return text2;
 }
+
+/**
+ * Detect the primary language of text content.
+ * Returns 'zh' for Chinese-heavy text, 'en' for English-heavy, 'mixed' otherwise.
+ */
+export function detectLanguage(text: string): 'zh' | 'en' | 'mixed' {
+  const sample = text.slice(0, 2000);
+  const cjkChars = (sample.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length;
+  const latinChars = (sample.match(/[a-zA-Z]/g) || []).length;
+  const total = cjkChars + latinChars;
+  if (total === 0) return 'zh'; // default
+  const cjkRatio = cjkChars / total;
+  if (cjkRatio > 0.6) return 'zh';
+  if (cjkRatio < 0.2) return 'en';
+  return 'mixed';
+}

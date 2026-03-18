@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   WebSpeechTTS, OpenAITTS, splitIntoParagraphs, splitIntoSentences,
-  TTSEngine, OpenAIVoice, getOpenAIVoices,
+  TTSEngine, OpenAIVoice, getOpenAIVoices, detectLanguage,
 } from '@/lib/tts';
 import {
   Article, saveArticle, setLastPlayedId, getGlobalSpeed, setGlobalSpeed,
@@ -87,9 +87,16 @@ export function useTTS(article: Article | null) {
       const sorted = sortVoices(raw);
       setVoices(sorted);
       if (!selectedVoice && sorted.length > 0) {
-        const zhTW = sorted.find((v) => v.lang === 'zh-TW' || v.lang === 'zh_TW');
-        const zh = zhTW || sorted.find((v) => v.lang.startsWith('zh'));
-        setSelectedVoice(zh || sorted[0]);
+        // Auto-detect language from article content and pick matching voice
+        const lang = article ? detectLanguage(article.content) : 'zh';
+        let preferred: SpeechSynthesisVoice | undefined;
+        if (lang === 'en') {
+          preferred = sorted.find((v) => v.lang.startsWith('en'));
+        } else {
+          preferred = sorted.find((v) => v.lang === 'zh-TW' || v.lang === 'zh_TW')
+            || sorted.find((v) => v.lang.startsWith('zh'));
+        }
+        setSelectedVoice(preferred || sorted[0]);
       }
     };
     loadVoices();
