@@ -1,5 +1,9 @@
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 
+// Default Supabase config — can be overridden in settings
+const DEFAULT_URL = 'https://xmbueuhnqivakmyoymru.supabase.co';
+const DEFAULT_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhtYnVldWhucWl2YWtteW95bXJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3OTI2NTgsImV4cCI6MjA4OTM2ODY1OH0.OIUopudla6IU0zVP3MXT9hLMVNPKPo3dd6-mQM5O9YM';
+
 const SUPABASE_URL_KEY = 'article-reader-supabase-url';
 const SUPABASE_ANON_KEY = 'article-reader-supabase-anon';
 
@@ -7,15 +11,15 @@ let client: SupabaseClient | null = null;
 
 export function getSupabaseConfig() {
   return {
-    url: localStorage.getItem(SUPABASE_URL_KEY) || '',
-    anonKey: localStorage.getItem(SUPABASE_ANON_KEY) || '',
+    url: localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_URL,
+    anonKey: localStorage.getItem(SUPABASE_ANON_KEY) || DEFAULT_ANON_KEY,
   };
 }
 
 export function setSupabaseConfig(url: string, anonKey: string) {
   localStorage.setItem(SUPABASE_URL_KEY, url);
   localStorage.setItem(SUPABASE_ANON_KEY, anonKey);
-  client = null; // Reset client
+  client = null;
 }
 
 export function getSupabase(): SupabaseClient | null {
@@ -29,8 +33,7 @@ export function getSupabase(): SupabaseClient | null {
 }
 
 export function isSupabaseConfigured(): boolean {
-  const { url, anonKey } = getSupabaseConfig();
-  return !!(url && anonKey);
+  return true; // Always configured with defaults
 }
 
 // Auth
