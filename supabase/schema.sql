@@ -1,5 +1,6 @@
 -- Article Voice Reader — Supabase Schema
 -- Run this in your Supabase SQL Editor to set up the database.
+-- NOTE: See add-profiles.sql for the public profiles migration (profiles table, is_public column, RLS policies).
 
 -- Articles table
 CREATE TABLE IF NOT EXISTS articles (

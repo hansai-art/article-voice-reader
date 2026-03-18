@@ -22,6 +22,7 @@ import { exportToMp3, getExportVoices, ExportVoice } from '@/lib/mp3-export';
 import { getApiKey, getApiProvider } from '@/lib/storage';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { toast } from '@/hooks/use-toast';
+import { getPublicArticleById } from '@/lib/supabase';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0];
 const SLEEP_OPTIONS = [0, 15, 30, 45, 60, 90];
@@ -53,18 +54,37 @@ const PlayerPage = () => {
   const [showToolbar, setShowToolbar] = useState(false);
   const [readingTheme, setReadingThemeState] = useState<ReadingTheme>(() => getReadingTheme());
   const [rsvpMode, setRsvpMode] = useState(false);
+  const [isPublicView, setIsPublicView] = useState(false);
   const sleepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const paragraphRefs = useRef<(HTMLDivElement | null)[]>([]);
   const wakeLock = useWakeLock();
 
   useEffect(() => {
-    if (id) {
-      const a = getArticle(id);
-      if (a) {
-        setArticle(a);
-        setBookmarks(new Set(a.bookmarks || []));
-        setNotes(a.notes || {});
-      } else navigate('/');
+    if (!id) return;
+    const a = getArticle(id);
+    if (a) {
+      setArticle(a);
+      setBookmarks(new Set(a.bookmarks || []));
+      setNotes(a.notes || {});
+    } else {
+      // Try loading from Supabase as a public article
+      getPublicArticleById(id).then((remote) => {
+        if (remote) {
+          const mapped: Article = {
+            id: remote.article_id || remote.id,
+            title: remote.title || 'Untitled',
+            content: remote.content || '',
+            wordCount: remote.word_count || 0,
+            createdAt: new Date(remote.created_at).getTime(),
+            lastPlayedAt: 0,
+            paragraphIndex: 0,
+          };
+          setArticle(mapped);
+          setIsPublicView(true);
+        } else {
+          navigate('/');
+        }
+      });
     }
   }, [id]);
 
@@ -245,7 +265,7 @@ const PlayerPage = () => {
             </div>
           ) : (
             <>
-              <h1 className="text-base font-bold truncate flex-1" onClick={startEditTitle}>{article.title}</h1>
+              <h1 className={`text-base font-bold truncate flex-1 ${isPublicView ? '' : 'cursor-pointer'}`} onClick={isPublicView ? undefined : startEditTitle}>{article.title}</h1>
               {/* Header actions: TOC, Tags, Export, Summary */}
               <Popover>
                 <PopoverTrigger asChild>
@@ -260,24 +280,26 @@ const PlayerPage = () => {
                     ))}
                 </PopoverContent>
               </Popover>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground"><Tag className="h-4 w-4" /></Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-52 p-3" align="end">
-                  <p className="text-xs font-medium text-muted-foreground mb-2">{t('tags')}</p>
-                  {article.tags?.length ? (
-                    <div className="flex gap-1 flex-wrap mb-2">
-                      {article.tags.map((tag) => (
-                        <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary cursor-pointer hover:bg-destructive/10 hover:text-destructive"
-                          onClick={() => { const u = { ...article, tags: article.tags!.filter((t) => t !== tag) }; saveArticle(u); setArticle(u); }}>{tag} ×</span>
-                      ))}
-                    </div>
-                  ) : null}
-                  <Input placeholder={t('tagPlaceholder')} className="h-7 text-xs"
-                    onKeyDown={(e) => { if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (!v) return; const tags = [...(article.tags || [])]; if (!tags.includes(v)) tags.push(v); const u = { ...article, tags }; saveArticle(u); setArticle(u); (e.target as HTMLInputElement).value = ''; } }} />
-                </PopoverContent>
-              </Popover>
+              {!isPublicView && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground"><Tag className="h-4 w-4" /></Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-52 p-3" align="end">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">{t('tags')}</p>
+                    {article.tags?.length ? (
+                      <div className="flex gap-1 flex-wrap mb-2">
+                        {article.tags.map((tag) => (
+                          <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary cursor-pointer hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => { const u = { ...article, tags: article.tags!.filter((t) => t !== tag) }; saveArticle(u); setArticle(u); }}>{tag} ×</span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <Input placeholder={t('tagPlaceholder')} className="h-7 text-xs"
+                      onKeyDown={(e) => { if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (!v) return; const tags = [...(article.tags || [])]; if (!tags.includes(v)) tags.push(v); const u = { ...article, tags }; saveArticle(u); setArticle(u); (e.target as HTMLInputElement).value = ''; } }} />
+                  </PopoverContent>
+                </Popover>
+              )}
             </>
           )}
         </div>

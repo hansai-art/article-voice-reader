@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Eye, EyeOff, Key, Cloud, Loader2, LogOut } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Key, Cloud, Loader2, LogOut, User2, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -14,6 +14,7 @@ import {
 import {
   getSupabaseConfig, setSupabaseConfig,
   isSupabaseConfigured, signIn, signUp, signOut, getUser,
+  getMyProfile, updateProfile,
 } from '@/lib/supabase';
 import { syncArticles } from '@/lib/sync';
 import { toast } from '@/hooks/use-toast';
@@ -41,9 +42,25 @@ const SettingsPage = () => {
   const [authLoading, setAuthLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
 
+  // Profile
+  const [profileUsername, setProfileUsername] = useState('');
+  const [profileDisplayName, setProfileDisplayName] = useState('');
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [urlCopied, setUrlCopied] = useState(false);
+
   useEffect(() => {
     if (isSupabaseConfigured()) {
-      getUser().then(setUser);
+      getUser().then((u) => {
+        setUser(u);
+        if (u) {
+          getMyProfile().then((p) => {
+            if (p) {
+              setProfileUsername(p.username || '');
+              setProfileDisplayName(p.display_name || '');
+            }
+          });
+        }
+      });
     }
   }, []);
 
@@ -108,6 +125,27 @@ const SettingsPage = () => {
     } finally {
       setSyncLoading(false);
     }
+  };
+
+  const handleSaveProfile = async () => {
+    setProfileLoading(true);
+    try {
+      await updateProfile({ username: profileUsername.trim(), display_name: profileDisplayName.trim() });
+      toast({ title: t('profileSaved'), duration: 2000 });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      toast({ title: t('profileSaveError'), description: msg, variant: 'destructive' });
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const handleCopyUrl = () => {
+    const url = `https://twavr.lovable.app/${profileUsername}`;
+    navigator.clipboard.writeText(url);
+    setUrlCopied(true);
+    toast({ title: t('urlCopied'), duration: 2000 });
+    setTimeout(() => setUrlCopied(false), 2000);
   };
 
   return (
@@ -253,6 +291,55 @@ const SettingsPage = () => {
             </div>
           )}
         </Card>
+
+        {/* Public Profile — only when logged in */}
+        {user && (
+          <Card className="p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <User2 className="h-5 w-5 text-primary" />
+              <h2 className="font-semibold">{t('publicProfile')}</h2>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('username')}</label>
+              <Input
+                value={profileUsername}
+                onChange={(e) => setProfileUsername(e.target.value)}
+                placeholder="hans"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('displayName')}</label>
+              <Input
+                value={profileDisplayName}
+                onChange={(e) => setProfileDisplayName(e.target.value)}
+                placeholder="Hans Lin"
+              />
+            </div>
+
+            {profileUsername.trim() && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t('publicUrl')}</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={`https://twavr.lovable.app/${profileUsername.trim()}`}
+                    readOnly
+                    className="text-xs"
+                  />
+                  <Button variant="outline" size="icon" onClick={handleCopyUrl} className="shrink-0">
+                    {urlCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <Button onClick={handleSaveProfile} disabled={profileLoading} className="w-full btn-press">
+              {profileLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {t('saveSettings')}
+            </Button>
+          </Card>
+        )}
 
         {/* Pro Features */}
         <Card className="p-5 space-y-3">

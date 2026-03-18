@@ -74,3 +74,87 @@ export function onAuthChange(callback: (user: User | null) => void) {
   });
   return { unsubscribe: () => data.subscription.unsubscribe() };
 }
+
+// Get profile by username
+export async function getProfileByUsername(username: string) {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from('profiles')
+    .select('*')
+    .eq('username', username)
+    .single();
+  if (error) return null;
+  return data;
+}
+
+// Get public articles by user ID
+export async function getPublicArticles(userId: string) {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data, error } = await sb
+    .from('articles')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_public', true)
+    .order('created_at', { ascending: false });
+  if (error) return [];
+  return data;
+}
+
+// Get user's own profile
+export async function getMyProfile() {
+  const user = await getUser();
+  if (!user) return null;
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+  if (error) return null;
+  return data;
+}
+
+// Update profile
+export async function updateProfile(updates: { username?: string; display_name?: string }) {
+  const user = await getUser();
+  if (!user) return null;
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from('profiles')
+    .upsert({ id: user.id, ...updates })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Toggle article public visibility
+export async function toggleArticlePublic(articleId: string, isPublic: boolean) {
+  const user = await getUser();
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return;
+  await sb
+    .from('articles')
+    .update({ is_public: isPublic })
+    .eq('article_id', articleId)
+    .eq('user_id', user.id);
+}
+
+// Get a single public article by ID
+export async function getPublicArticleById(articleId: string) {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from('articles')
+    .select('*')
+    .eq('article_id', articleId)
+    .eq('is_public', true)
+    .single();
+  if (error) return null;
+  return data;
+}

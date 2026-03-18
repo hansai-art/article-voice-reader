@@ -8,6 +8,7 @@ import AddArticlePage from "./pages/AddArticlePage";
 import PlayerPage from "./pages/PlayerPage";
 import SettingsPage from "./pages/SettingsPage";
 import NotFound from "./pages/NotFound";
+import PublicProfilePage from "./pages/PublicProfilePage";
 
 const App = () => (
   <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
@@ -20,6 +21,7 @@ const App = () => (
           <Route path="/add" element={<AddArticlePage />} />
           <Route path="/player/:id" element={<PlayerPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/:username" element={<PublicProfilePage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

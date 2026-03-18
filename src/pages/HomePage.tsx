@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Globe, Trash2, BookOpen, Sun, Moon, Download, Upload, Settings, Search, ArrowUpDown, BarChart3, Play } from 'lucide-react';
+import { Plus, Globe, Trash2, BookOpen, Sun, Moon, Download, Upload, Settings, Search, ArrowUpDown, BarChart3, Play, Eye, EyeOff } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,8 @@ import {
 import { useLanguage } from '@/hooks/useLanguage';
 import { formatTimeAgo } from '@/lib/i18n';
 import { toast } from '@/hooks/use-toast';
+import { getUser, toggleArticlePublic } from '@/lib/supabase';
+import type { User } from '@supabase/supabase-js';
 
 type SortMode = 'recent' | 'created' | 'progress' | 'title';
 
@@ -37,6 +39,8 @@ const HomePage = () => {
   const [sortMode, setSortMode] = useState<SortMode>('recent');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [showStats, setShowStats] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [articlePublicMap, setArticlePublicMap] = useState<Record<string, boolean>>({});
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -46,6 +50,7 @@ const HomePage = () => {
       const a = getArticle(lastId);
       if (a && a.lastPlayedAt > 0) setLastPlayedArticle(a);
     }
+    getUser().then(setCurrentUser);
   }, []);
 
   const handleDelete = (id: string) => {
@@ -53,6 +58,14 @@ const HomePage = () => {
     setArticles(getArticles());
     if (lastPlayedArticle?.id === id) setLastPlayedArticle(null);
     setDeleteTarget(null);
+  };
+
+  const handleTogglePublic = async (articleId: string) => {
+    const current = articlePublicMap[articleId] || false;
+    const next = !current;
+    setArticlePublicMap((prev) => ({ ...prev, [articleId]: next }));
+    await toggleArticlePublic(articleId, next);
+    toast({ title: next ? t('publicLabel') : t('privateLabel'), duration: 1500 });
   };
 
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
@@ -310,17 +323,33 @@ const HomePage = () => {
                         )}
                       </p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="shrink-0 text-muted-foreground hover:text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteTarget(article.id);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      {currentUser && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-primary h-8 w-8"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleTogglePublic(article.id);
+                          }}
+                          title={articlePublicMap[article.id] ? t('publicLabel') : t('privateLabel')}
+                        >
+                          {articlePublicMap[article.id] ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="shrink-0 text-muted-foreground hover:text-destructive h-8 w-8"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget(article.id);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                   {article.tags && article.tags.length > 0 && (
                     <div className="mt-2 flex gap-1 flex-wrap">
