@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Globe, Trash2, BookOpen, Sun, Moon, Download, Upload } from 'lucide-react';
+import { Plus, Globe, Trash2, BookOpen, Sun, Moon, Download, Upload, Settings } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -107,6 +107,9 @@ const HomePage = () => {
             </Button>
             <Button variant="ghost" size="icon" onClick={toggleLanguage} className="touch-target btn-press">
               <Globe className="h-5 w-5" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => navigate('/settings')} className="touch-target btn-press">
+              <Settings className="h-5 w-5" />
             </Button>
           </div>
         </div>

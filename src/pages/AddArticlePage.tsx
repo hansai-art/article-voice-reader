@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Upload, FileText, Sparkles, Link, Loader2 } from 'lucide-react';
+import { ArrowLeft, Upload, FileText, Sparkles, Link, Loader2, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -9,6 +9,7 @@ import { createArticle, saveArticle } from '@/lib/storage';
 import { parseFile } from '@/lib/file-parser';
 import { estimateReadingTime, cleanText } from '@/lib/tts';
 import { fetchArticleFromURL } from '@/lib/url-parser';
+import { parseImageOCR, isImageFile } from '@/lib/ocr-parser';
 import { toast } from '@/hooks/use-toast';
 
 const AddArticlePage = () => {
@@ -19,7 +20,9 @@ const AddArticlePage = () => {
   const [loading, setLoading] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [urlLoading, setUrlLoading] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const ocrRef = useRef<HTMLInputElement>(null);
 
   const wordCount = content.length;
   const readTime = estimateReadingTime(wordCount);
@@ -28,29 +31,25 @@ const AddArticlePage = () => {
   const handleUrlFetch = async () => {
     const url = urlInput.trim();
     if (!url) return;
-
     setUrlLoading(true);
     try {
       const result = await fetchArticleFromURL(url);
       if (result) {
         setContent(result.content);
         setFileName(result.title);
-        toast({ title: `${result.title}`, duration: 3000 });
+        toast({ title: result.title, duration: 3000 });
       }
     } catch (e) {
       const err = e instanceof Error ? e.message : 'UNKNOWN';
-      if (err === 'INVALID_URL') {
-        toast({ title: t('urlInvalid'), variant: 'destructive' });
-      } else if (err === 'NO_CONTENT') {
-        toast({ title: t('urlNoContent'), variant: 'destructive' });
-      } else {
-        toast({ title: t('urlFetchError'), description: err, variant: 'destructive', duration: 5000 });
-      }
+      if (err === 'INVALID_URL') toast({ title: t('urlInvalid'), variant: 'destructive' });
+      else if (err === 'NO_CONTENT') toast({ title: t('urlNoContent'), variant: 'destructive' });
+      else toast({ title: t('urlFetchError'), description: err, variant: 'destructive', duration: 5000 });
     } finally {
       setUrlLoading(false);
     }
   };
 
+  // File upload
   const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -68,6 +67,24 @@ const AddArticlePage = () => {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
+
+    // Check if it's an image for OCR
+    if (isImageFile(file)) {
+      setOcrProgress(0);
+      try {
+        const text = await parseImageOCR(file, (p) => setOcrProgress(Math.round(p.progress * 100)));
+        if (text) {
+          setContent((prev) => prev ? prev + '\n\n' + text : text);
+          toast({ title: t('ocrDone'), duration: 2000 });
+        }
+      } catch {
+        toast({ title: t('ocrError'), variant: 'destructive' });
+      } finally {
+        setOcrProgress(null);
+      }
+      return;
+    }
+
     setLoading(true);
     setFileName(file.name);
     try {
@@ -76,7 +93,27 @@ const AddArticlePage = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
+
+  // OCR upload
+  const handleOcrFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setOcrProgress(0);
+    try {
+      const text = await parseImageOCR(file, (p) => setOcrProgress(Math.round(p.progress * 100)));
+      if (text) {
+        setContent((prev) => prev ? prev + '\n\n' + text : text);
+        setFileName(file.name);
+        toast({ title: t('ocrDone'), duration: 2000 });
+      }
+    } catch {
+      toast({ title: t('ocrError'), variant: 'destructive' });
+    } finally {
+      setOcrProgress(null);
+      if (ocrRef.current) ocrRef.current.value = '';
+    }
+  };
 
   const handleClean = () => {
     if (!content.trim()) return;
@@ -100,15 +137,9 @@ const AddArticlePage = () => {
 
   return (
     <div className="min-h-screen">
-      {/* Header */}
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border px-6 py-4">
         <div className="flex items-center gap-3 max-w-lg mx-auto">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate('/')}
-            className="touch-target btn-press"
-          >
+          <Button variant="ghost" size="icon" onClick={() => navigate('/')} className="touch-target btn-press">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-lg font-bold">{t('addArticle')}</h1>
@@ -129,11 +160,7 @@ const AddArticlePage = () => {
               disabled={urlLoading}
             />
           </div>
-          <Button
-            onClick={handleUrlFetch}
-            disabled={!urlInput.trim() || urlLoading}
-            className="btn-press shrink-0"
-          >
+          <Button onClick={handleUrlFetch} disabled={!urlInput.trim() || urlLoading} className="btn-press shrink-0">
             {urlLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('urlFetch')}
           </Button>
         </div>
@@ -145,36 +172,56 @@ const AddArticlePage = () => {
           <div className="flex-1 h-px bg-border" />
         </div>
 
-        {/* File upload dropzone */}
-        <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={handleDrop}
-          onClick={() => fileRef.current?.click()}
-          className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors btn-press"
-        >
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".txt,.pdf,.docx,.md"
-            className="hidden"
-            onChange={handleFile}
-          />
-          {loading ? (
-            <div className="animate-pulse">
-              <FileText className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-              <p className="text-sm text-muted-foreground">Loading...</p>
-            </div>
-          ) : (
-            <>
-              <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-              <p className="font-medium">{t('uploadFile')}</p>
-              <p className="text-sm text-muted-foreground mt-1">{t('uploadHint')}</p>
-              {fileName && (
-                <p className="text-sm text-primary mt-2">{fileName}</p>
-              )}
-            </>
-          )}
+        {/* File + OCR uploads side by side */}
+        <div className="grid grid-cols-2 gap-3">
+          {/* File upload */}
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+            onClick={() => fileRef.current?.click()}
+            className="border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors btn-press"
+          >
+            <input ref={fileRef} type="file" accept=".txt,.pdf,.docx,.md" className="hidden" onChange={handleFile} />
+            {loading ? (
+              <div className="animate-pulse">
+                <FileText className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                <p className="text-xs text-muted-foreground">Loading...</p>
+              </div>
+            ) : (
+              <>
+                <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                <p className="font-medium text-sm">{t('uploadFile')}</p>
+                <p className="text-xs text-muted-foreground mt-1">{t('uploadHint')}</p>
+              </>
+            )}
+          </div>
+
+          {/* OCR upload */}
+          <div
+            onClick={() => ocrRef.current?.click()}
+            className="border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-accent/40 hover:bg-accent/5 transition-colors btn-press"
+          >
+            <input ref={ocrRef} type="file" accept="image/*" className="hidden" onChange={handleOcrFile} />
+            {ocrProgress !== null ? (
+              <div className="animate-pulse">
+                <Camera className="h-8 w-8 mx-auto text-accent mb-2" />
+                <p className="text-xs text-accent font-medium">
+                  {t('ocrProcessing').replace('{progress}', String(ocrProgress))}
+                </p>
+              </div>
+            ) : (
+              <>
+                <Camera className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                <p className="font-medium text-sm">{t('ocrUpload')}</p>
+                <p className="text-xs text-muted-foreground mt-1">{t('ocrHint')}</p>
+              </>
+            )}
+          </div>
         </div>
+
+        {fileName && (
+          <p className="text-sm text-primary text-center">{fileName}</p>
+        )}
 
         {/* Or divider */}
         <div className="flex items-center gap-4">
@@ -195,19 +242,10 @@ const AddArticlePage = () => {
         {wordCount > 0 && (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span>
-                {t('wordCount')}: {wordCount.toLocaleString()} {t('characters')}
-              </span>
-              <span>
-                {t('estimatedTime')}: ~{readTime} {t('minutes')}
-              </span>
+              <span>{t('wordCount')}: {wordCount.toLocaleString()} {t('characters')}</span>
+              <span>{t('estimatedTime')}: ~{readTime} {t('minutes')}</span>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleClean}
-              className="btn-press gap-1.5 text-xs"
-            >
+            <Button variant="outline" size="sm" onClick={handleClean} className="btn-press gap-1.5 text-xs">
               <Sparkles className="h-3.5 w-3.5" />
               {t('cleanText')}
             </Button>

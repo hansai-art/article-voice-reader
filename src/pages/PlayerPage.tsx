@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward,
-  Pencil, Check, X, Minus, Plus, Timer, Eye, EyeOff,
+  Pencil, Check, X, Minus, Plus, Timer, Eye, EyeOff, Sparkles, Loader2,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -15,8 +15,11 @@ import { useLanguage } from '@/hooks/useLanguage';
 import { useTTS } from '@/hooks/useTTS';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { estimateReadingTime } from '@/lib/tts';
+import { generateSummary, SummaryResult } from '@/lib/ai-summary';
+import { getApiKey } from '@/lib/storage';
+import { toast } from '@/hooks/use-toast';
 
-const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
+const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0];
 const SLEEP_OPTIONS = [0, 15, 30, 45, 60, 90]; // 0 = off
 const FONT_MIN = 14;
 const FONT_MAX = 24;
@@ -30,6 +33,9 @@ const PlayerPage = () => {
   const [editTitle, setEditTitle] = useState('');
   const [fontSize, setFontSizeState] = useState(() => getFontSize());
   const [immersiveMode, setImmersiveMode] = useState(false);
+  const [summary, setSummary] = useState<SummaryResult | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
   const [sleepMinutes, setSleepMinutes] = useState(0);
   const [sleepRemaining, setSleepRemaining] = useState(0);
   const sleepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -161,6 +167,28 @@ const PlayerPage = () => {
   };
   const cancelEditTitle = () => setIsEditingTitle(false);
 
+  // AI Summary
+  const handleGenerateSummary = async () => {
+    if (!article) return;
+    if (!getApiKey()) {
+      toast({ title: t('summaryNoApiKey'), variant: 'destructive' });
+      return;
+    }
+    setSummaryLoading(true);
+    try {
+      const lang = document.documentElement.lang === 'en' ? 'en' : 'zh-TW';
+      const result = await generateSummary(article.content, lang as 'zh-TW' | 'en');
+      setSummary(result);
+      setShowSummary(true);
+    } catch (e) {
+      const err = e instanceof Error ? e.message : 'Unknown';
+      console.error('[AI Summary]', err);
+      toast({ title: t('summaryError'), description: err, variant: 'destructive', duration: 5000 });
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
   // Progress
   const totalTime = article ? estimateReadingTime(article.wordCount, speed) : 0;
   const elapsedTime = totalTime * (progressPercent / 100);
@@ -222,8 +250,56 @@ const PlayerPage = () => {
         </div>
       </header>
 
+      {/* AI Summary section */}
+      <div className="max-w-lg mx-auto px-6 mt-4">
+        {!showSummary ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleGenerateSummary}
+            disabled={summaryLoading}
+            className="btn-press gap-1.5 text-xs w-full"
+          >
+            {summaryLoading ? (
+              <><Loader2 className="h-3.5 w-3.5 animate-spin" /> {t('summaryGenerating')}</>
+            ) : (
+              <><Sparkles className="h-3.5 w-3.5" /> {t('generateSummary')}</>
+            )}
+          </Button>
+        ) : summary && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl bg-primary/5 border border-primary/20 p-4 space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-primary flex items-center gap-1.5">
+                <Sparkles className="h-4 w-4" /> {t('summary')}
+              </h3>
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowSummary(false)}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <p className="text-sm leading-relaxed">{summary.summary}</p>
+            {summary.keyPoints.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-muted-foreground">{t('keyPoints')}</p>
+                <ul className="space-y-1">
+                  {summary.keyPoints.map((point, i) => (
+                    <li key={i} className="text-sm flex items-start gap-2">
+                      <span className="text-primary mt-0.5 shrink-0">•</span>
+                      {point}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </div>
+
       {/* Article content */}
-      <main className="max-w-lg mx-auto px-6 mt-6">
+      <main className="max-w-lg mx-auto px-6 mt-4">
         <div className="space-y-4 prose-reader leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
           {paragraphs.map((para, idx) => {
             const distance = Math.abs(idx - paragraphIndex);

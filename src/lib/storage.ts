@@ -95,6 +95,28 @@ export function setFontSize(size: number) {
   localStorage.setItem(FONT_SIZE_KEY, size.toString());
 }
 
+// API Key storage
+const API_KEY_KEY = 'article-reader-api-key';
+const API_PROVIDER_KEY = 'article-reader-api-provider';
+
+export type ApiProvider = 'gemini' | 'openai';
+
+export function getApiKey(): string {
+  return localStorage.getItem(API_KEY_KEY) || '';
+}
+
+export function setApiKey(key: string) {
+  localStorage.setItem(API_KEY_KEY, key);
+}
+
+export function getApiProvider(): ApiProvider {
+  return (localStorage.getItem(API_PROVIDER_KEY) as ApiProvider) || 'gemini';
+}
+
+export function setApiProvider(provider: ApiProvider) {
+  localStorage.setItem(API_PROVIDER_KEY, provider);
+}
+
 // Export all articles as JSON
 export function exportArticles(): string {
   const data = {
