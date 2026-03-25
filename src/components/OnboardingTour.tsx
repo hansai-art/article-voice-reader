@@ -32,18 +32,18 @@ export function OnboardingTour({ onComplete }: { onComplete: () => void }) {
   const isLast = step === steps.length - 1;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6">
+    <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 pointer-events-none">
       <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="relative w-full max-w-sm bg-background rounded-2xl shadow-2xl p-8 text-center"
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="pointer-events-auto w-full max-w-lg mx-auto bg-background border border-border rounded-2xl shadow-2xl p-6"
       >
         {/* Skip button */}
         <button
           onClick={finish}
-          className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
+          className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition-colors"
         >
-          <X className="h-5 w-5" />
+          <X className="h-4 w-4" />
         </button>
 
         {/* Step content with animation */}
@@ -54,50 +54,53 @@ export function OnboardingTour({ onComplete }: { onComplete: () => void }) {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.2 }}
-            className="flex flex-col items-center"
+            className="flex items-center gap-4"
           >
-            <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-6">
-              <Icon className="h-8 w-8 text-primary" />
+            <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+              <Icon className="h-6 w-6 text-primary" />
             </div>
-            <h2 className="text-xl font-bold mb-3">{t(current.titleKey)}</h2>
-            <p className="text-muted-foreground text-sm leading-relaxed">{t(current.descKey)}</p>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base font-bold">{t(current.titleKey)}</h2>
+              <p className="text-muted-foreground text-sm leading-relaxed mt-0.5">{t(current.descKey)}</p>
+            </div>
           </motion.div>
         </AnimatePresence>
 
-        {/* Dots indicator */}
-        <div className="flex justify-center gap-1.5 mt-8 mb-6">
-          {steps.map((_, i) => (
-            <div
-              key={i}
-              className={`h-1.5 rounded-full transition-all ${
-                i === step ? 'w-6 bg-primary' : 'w-1.5 bg-muted-foreground/30'
-              }`}
-            />
-          ))}
-        </div>
-
-        {/* Navigation buttons */}
-        <div className="flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setStep(step - 1)}
-            disabled={step === 0}
-            className="gap-1"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            {t('back')}
-          </Button>
-          {isLast ? (
-            <Button size="sm" onClick={finish} className="gap-1 px-6">
-              {t('onboardingDone')}
-            </Button>
-          ) : (
-            <Button size="sm" onClick={() => setStep(step + 1)} className="gap-1">
-              {t('onboardingNext')}
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          )}
+        {/* Dots + Navigation */}
+        <div className="flex items-center justify-between mt-4">
+          <div className="flex gap-1.5">
+            {steps.map((_, i) => (
+              <div
+                key={i}
+                className={`h-1.5 rounded-full transition-all ${
+                  i === step ? 'w-6 bg-primary' : 'w-1.5 bg-muted-foreground/30'
+                }`}
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            {step > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStep(step - 1)}
+                className="gap-1 h-8"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                {t('back')}
+              </Button>
+            )}
+            {isLast ? (
+              <Button size="sm" onClick={finish} className="gap-1 px-5 h-8">
+                {t('onboardingDone')}
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => setStep(step + 1)} className="gap-1 h-8">
+                {t('onboardingNext')}
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
       </motion.div>
     </div>
