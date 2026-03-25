@@ -33,7 +33,7 @@
 - `src/lib/ai-summary.ts` — AI 摘要（Gemini / OpenAI）
 - `src/lib/mp3-export.ts` — MP3 匯出（OpenAI TTS API）
 
-## 踩過的坑（必讀）
+## 開發注意事項
 
 ### TTS
 - Chrome 的 `speechSynthesis` 播放超過 ~15 秒會自動暫停 → 需要每 10 秒呼叫 `resume()`
@@ -46,7 +46,6 @@
 - 這些 proxy 可能不穩定，需要 fallback 機制
 
 ### Supabase
-- 專案 ID：`xmbueuhnqivakmyoymru`（東京區域）
 - Schema 在 `supabase/schema.sql`，用 `supabase db push` 部署
 - RLS 已開啟，使用者只能存取自己的文章
 - 同步策略：last-write-wins，基於 lastPlayedAt / createdAt 時間戳
@@ -59,9 +58,8 @@
 ## 建置與部署
 
 ```bash
-npx vite build      # 建置
+npm run build        # 建置
 git push             # 推到 main 自動部署
-# 部署後提醒使用者 Cmd+Shift+R 硬刷新
 ```
 
 ## 新增 UI 文字的流程
