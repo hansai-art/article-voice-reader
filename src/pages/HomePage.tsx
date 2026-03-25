@@ -24,6 +24,7 @@ import { useLanguage } from '@/hooks/useLanguage';
 import { formatTimeAgo } from '@/lib/i18n';
 import { toast } from '@/hooks/use-toast';
 import { getUser, toggleArticlePublic } from '@/lib/supabase';
+import { OnboardingTour, shouldShowOnboarding } from '@/components/OnboardingTour';
 import type { User } from '@supabase/supabase-js';
 
 type SortMode = 'recent' | 'created' | 'progress' | 'title';
@@ -41,6 +42,7 @@ const HomePage = () => {
   const [showStats, setShowStats] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [articlePublicMap, setArticlePublicMap] = useState<Record<string, boolean>>({});
+  const [showOnboarding, setShowOnboarding] = useState(shouldShowOnboarding);
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -395,6 +397,9 @@ const HomePage = () => {
           </div>
         </div>
       )}
+
+      {/* Onboarding tour */}
+      {showOnboarding && <OnboardingTour onComplete={() => setShowOnboarding(false)} />}
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
