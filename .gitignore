@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Supabase local temp (contains project refs, credentials)
+supabase/.temp/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# API keys and secrets
+*.pem
+*.key
