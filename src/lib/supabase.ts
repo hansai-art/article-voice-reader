@@ -42,6 +42,17 @@ export async function signUp(email: string, password: string) {
   if (!sb) throw new Error('NOT_CONFIGURED');
   const { data, error } = await sb.auth.signUp({ email, password });
   if (error) throw error;
+  // If email confirmation is disabled, session is returned and user is auto-logged-in
+  if (data.session) {
+    return data.user;
+  }
+  // Fallback: try sign in immediately (works if auto-confirm is on)
+  try {
+    const signInResult = await sb.auth.signInWithPassword({ email, password });
+    if (signInResult.data.user) return signInResult.data.user;
+  } catch {
+    // ignore — email confirmation might be required
+  }
   return data.user;
 }
 

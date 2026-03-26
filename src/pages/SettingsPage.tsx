@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Eye, EyeOff, Key, Cloud, Loader2, LogOut, User2, Copy, Check } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Key, Cloud, Loader2, LogOut, UserPlus, ChevronDown, ChevronUp, User2, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -34,6 +34,7 @@ const SettingsPage = () => {
   const [sbUrl, setSbUrl] = useState(config.url);
   const [sbKey, setSbKey] = useState(config.anonKey);
   const [showSbKey, setShowSbKey] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Auth
   const [user, setUser] = useState<User | null>(null);
@@ -41,6 +42,7 @@ const SettingsPage = () => {
   const [password, setPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
+  const [authMode, setAuthMode] = useState<'register' | 'login'>('register');
 
   // Profile
   const [profileUsername, setProfileUsername] = useState('');
@@ -73,40 +75,6 @@ const SettingsPage = () => {
   const handleSaveSupabase = () => {
     setSupabaseConfig(sbUrl.trim(), sbKey.trim());
     toast({ title: t('settingsSaved'), duration: 2000 });
-  };
-
-  const handleLogin = async () => {
-    if (!email || !password) return;
-    setAuthLoading(true);
-    try {
-      const u = await signIn(email, password);
-      setUser(u);
-      toast({ title: t('loginSuccess') });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Unknown error';
-      toast({ title: t('loginError'), description: msg, variant: 'destructive' });
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleRegister = async () => {
-    if (!email || !password) return;
-    setAuthLoading(true);
-    try {
-      await signUp(email, password);
-      toast({ title: t('registerSuccess'), duration: 5000 });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Unknown error';
-      toast({ title: t('loginError'), description: msg, variant: 'destructive' });
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    await signOut();
-    setUser(null);
   };
 
   const handleSync = async () => {
@@ -148,6 +116,70 @@ const SettingsPage = () => {
     setTimeout(() => setUrlCopied(false), 2000);
   };
 
+  const handleRegister = async () => {
+    if (!email || !password) return;
+    setAuthLoading(true);
+    try {
+      const u = await signUp(email, password);
+      if (u) {
+        setUser(u);
+        toast({ title: t('registerSuccess') });
+        // Auto-sync after registration
+        try {
+          const result = await syncArticles();
+          toast({
+            title: t('syncSuccess')
+              .replace('{up}', String(result.uploaded))
+              .replace('{down}', String(result.downloaded)),
+          });
+        } catch {
+          // sync might fail if no articles yet, that's ok
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      toast({ title: t('loginError'), description: msg, variant: 'destructive' });
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!email || !password) return;
+    setAuthLoading(true);
+    try {
+      const u = await signIn(email, password);
+      setUser(u);
+      toast({ title: t('loginSuccess') });
+      // Auto-sync after login
+      try {
+        const result = await syncArticles();
+        toast({
+          title: t('syncSuccess')
+            .replace('{up}', String(result.uploaded))
+            .replace('{down}', String(result.downloaded)),
+        });
+      } catch {
+        // sync might fail, that's ok
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      toast({ title: t('loginError'), description: msg, variant: 'destructive' });
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut();
+    setUser(null);
+  };
+
+  const handleAuthSubmit = () => {
+    if (authMode === 'register') handleRegister();
+    else handleLogin();
+  };
+
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border px-6 py-4">
@@ -160,134 +192,71 @@ const SettingsPage = () => {
       </header>
 
       <main className="max-w-lg mx-auto px-6 mt-6 space-y-6 pb-8">
-        {/* AI API Settings */}
-        <Card className="p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <Key className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold">{t('aiSettings')}</h2>
-          </div>
-          <p className="text-sm text-muted-foreground">{t('aiSettingsHint')}</p>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">{t('aiProvider')}</label>
-            <Select value={provider} onValueChange={(v) => setProvider(v as ApiProvider)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="gemini">Google Gemini</SelectItem>
-                <SelectItem value="openai">OpenAI</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">API Key</label>
-            <div className="relative">
-              <Input
-                type={showKey ? 'text' : 'password'}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={provider === 'gemini' ? 'AIzaSy...' : 'sk-...'}
-              />
-              <Button
-                variant="ghost" size="icon"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                onClick={() => setShowKey(!showKey)}
-              >
-                {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">{t('apiKeyHint')}</p>
-          </div>
-
-          <Button onClick={handleSaveApiKey} className="w-full btn-press">{t('saveSettings')}</Button>
-        </Card>
-
-        {/* Cloud Sync */}
+        {/* Account & Sync — TOP SECTION */}
         <Card className="p-5 space-y-4">
           <div className="flex items-center gap-2">
             <Cloud className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold">{t('cloudSync')}</h2>
+            <h2 className="font-semibold">{t('accountSection')}</h2>
           </div>
-          <p className="text-sm text-muted-foreground">{t('cloudSyncHint')}</p>
+          <p className="text-sm text-muted-foreground">{t('accountSectionHint')}</p>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">{t('supabaseUrl')}</label>
-            <Input
-              value={sbUrl}
-              onChange={(e) => setSbUrl(e.target.value)}
-              placeholder="https://xxxxx.supabase.co"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">{t('supabaseKey')}</label>
-            <div className="relative">
+          {user ? (
+            /* Logged in state */
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {t('loggedInAs').replace('{email}', user.email || '')}
+              </p>
+              <div className="flex gap-2">
+                <Button onClick={handleSync} disabled={syncLoading} className="flex-1 btn-press">
+                  {syncLoading ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" />{t('syncing')}</>
+                  ) : (
+                    t('syncNow')
+                  )}
+                </Button>
+                <Button variant="outline" onClick={handleLogout} className="btn-press">
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ) : (
+            /* Registration / Login form */
+            <div className="space-y-3">
               <Input
-                type={showSbKey ? 'text' : 'password'}
-                value={sbKey}
-                onChange={(e) => setSbKey(e.target.value)}
-                placeholder="eyJhbGciOi..."
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t('email')}
+              />
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={t('password')}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAuthSubmit(); }}
               />
               <Button
-                variant="ghost" size="icon"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                onClick={() => setShowSbKey(!showSbKey)}
+                onClick={handleAuthSubmit}
+                disabled={authLoading}
+                className="w-full btn-press text-base font-semibold gap-2"
+                size="lg"
               >
-                {showSbKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                {authLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <UserPlus className="h-4 w-4" />
+                    {authMode === 'register' ? t('quickRegister') : t('login')}
+                  </>
+                )}
               </Button>
-            </div>
-          </div>
-
-          <Button onClick={handleSaveSupabase} variant="outline" className="w-full btn-press">
-            {t('saveSettings')}
-          </Button>
-
-          {/* Auth section — only show if Supabase is configured */}
-          {isSupabaseConfigured() && (
-            <div className="pt-2 border-t border-border space-y-3">
-              {user ? (
-                <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    {t('loggedInAs').replace('{email}', user.email || '')}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button onClick={handleSync} disabled={syncLoading} className="flex-1 btn-press">
-                      {syncLoading ? (
-                        <><Loader2 className="h-4 w-4 animate-spin mr-2" />{t('syncing')}</>
-                      ) : (
-                        t('syncNow')
-                      )}
-                    </Button>
-                    <Button variant="outline" onClick={handleLogout} className="btn-press">
-                      <LogOut className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <Input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder={t('email')}
-                  />
-                  <Input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={t('password')}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
-                  />
-                  <div className="flex gap-2">
-                    <Button onClick={handleLogin} disabled={authLoading} className="flex-1 btn-press">
-                      {authLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('login')}
-                    </Button>
-                    <Button onClick={handleRegister} disabled={authLoading} variant="outline" className="flex-1 btn-press">
-                      {t('register')}
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <button
+                type="button"
+                className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setAuthMode(authMode === 'register' ? 'login' : 'register')}
+              >
+                {authMode === 'register' ? t('hasAccount') : t('backToRegister')}
+              </button>
             </div>
           )}
         </Card>
@@ -340,6 +309,101 @@ const SettingsPage = () => {
             </Button>
           </Card>
         )}
+
+        {/* AI API Settings */}
+        <Card className="p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <Key className="h-5 w-5 text-primary" />
+            <h2 className="font-semibold">{t('aiSettings')}</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">{t('aiSettingsHint')}</p>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">{t('aiProvider')}</label>
+            <Select value={provider} onValueChange={(v) => setProvider(v as ApiProvider)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gemini">Google Gemini</SelectItem>
+                <SelectItem value="openai">OpenAI</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">API Key</label>
+            <div className="relative">
+              <Input
+                type={showKey ? 'text' : 'password'}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={provider === 'gemini' ? 'AIzaSy...' : 'sk-...'}
+              />
+              <Button
+                variant="ghost" size="icon"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                onClick={() => setShowKey(!showKey)}
+              >
+                {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">{t('apiKeyHint')}</p>
+          </div>
+
+          <Button onClick={handleSaveApiKey} className="w-full btn-press">{t('saveSettings')}</Button>
+        </Card>
+
+        {/* Advanced: Supabase Config (collapsed by default) */}
+        <Card className="p-5 space-y-4">
+          <button
+            type="button"
+            className="flex items-center justify-between w-full"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+          >
+            <div className="flex items-center gap-2">
+              <Key className="h-5 w-5 text-muted-foreground" />
+              <h2 className="font-semibold text-muted-foreground">{t('advancedSettings')}</h2>
+            </div>
+            {showAdvanced ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+          </button>
+
+          {showAdvanced && (
+            <div className="space-y-4 pt-2">
+              <p className="text-sm text-muted-foreground">{t('cloudSyncHint')}</p>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t('supabaseUrl')}</label>
+                <Input
+                  value={sbUrl}
+                  onChange={(e) => setSbUrl(e.target.value)}
+                  placeholder="https://xxxxx.supabase.co"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t('supabaseKey')}</label>
+                <div className="relative">
+                  <Input
+                    type={showSbKey ? 'text' : 'password'}
+                    value={sbKey}
+                    onChange={(e) => setSbKey(e.target.value)}
+                    placeholder="eyJhbGciOi..."
+                  />
+                  <Button
+                    variant="ghost" size="icon"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                    onClick={() => setShowSbKey(!showSbKey)}
+                  >
+                    {showSbKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+              </div>
+
+              <Button onClick={handleSaveSupabase} variant="outline" className="w-full btn-press">
+                {t('saveSettings')}
+              </Button>
+            </div>
+          )}
+        </Card>
 
         {/* Pro Features */}
         <Card className="p-5 space-y-3">
