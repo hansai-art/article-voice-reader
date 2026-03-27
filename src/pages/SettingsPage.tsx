@@ -120,7 +120,11 @@ const SettingsPage = () => {
     if (!email || !password) return;
     setAuthLoading(true);
     try {
-      const u = await signUp(email, password);
+      let u = await signUp(email, password);
+      // If signUp returned a user without session (e.g. already exists), try signIn
+      if (!u) {
+        u = await signIn(email, password);
+      }
       if (u) {
         setUser(u);
         toast({ title: t('registerSuccess') });
@@ -136,9 +140,26 @@ const SettingsPage = () => {
           // sync might fail if no articles yet, that's ok
         }
       }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Unknown error';
-      toast({ title: t('loginError'), description: msg, variant: 'destructive' });
+    } catch {
+      // If signUp fails (e.g. user already exists), try signIn as fallback
+      try {
+        const u = await signIn(email, password);
+        setUser(u);
+        toast({ title: t('loginSuccess') });
+        try {
+          const result = await syncArticles();
+          toast({
+            title: t('syncSuccess')
+              .replace('{up}', String(result.uploaded))
+              .replace('{down}', String(result.downloaded)),
+          });
+        } catch {
+          // sync might fail, that's ok
+        }
+      } catch (e2) {
+        const msg = e2 instanceof Error ? e2.message : 'Unknown error';
+        toast({ title: t('loginError'), description: msg, variant: 'destructive' });
+      }
     } finally {
       setAuthLoading(false);
     }

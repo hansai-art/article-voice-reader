@@ -46,6 +46,13 @@ export async function signUp(email: string, password: string) {
   if (data.session) {
     return data.user;
   }
+  // Supabase returns a fake user with empty identities when email already exists
+  // (to prevent email enumeration). In that case, try signIn instead.
+  const identities = data.user?.identities;
+  if (!identities || identities.length === 0) {
+    // User likely already exists — caller should try signIn
+    return null;
+  }
   // Fallback: try sign in immediately (works if auto-confirm is on)
   try {
     const signInResult = await sb.auth.signInWithPassword({ email, password });
