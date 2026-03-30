@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useLanguage } from '@/hooks/useLanguage';
 import { createArticle, saveArticle } from '@/lib/storage';
+import { uploadArticle } from '@/lib/auto-sync';
 import { parseFile } from '@/lib/file-parser';
 import { estimateReadingTime, cleanText } from '@/lib/tts';
 import { fetchArticleFromURL } from '@/lib/url-parser';
@@ -158,6 +159,7 @@ const AddArticlePage = () => {
     const title = fileName ? fileName.replace(/\.[^.]+$/, '') : undefined;
     const article = createArticle(content.trim(), title);
     saveArticle(article);
+    uploadArticle(article); // auto-sync to cloud
     navigate(`/player/${article.id}`);
   };
 

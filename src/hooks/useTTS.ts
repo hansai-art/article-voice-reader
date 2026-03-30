@@ -10,6 +10,7 @@ import {
 } from '@/lib/storage';
 import { toast } from '@/hooks/use-toast';
 import { t } from '@/lib/i18n';
+import { uploadProgressDebounced } from '@/lib/auto-sync';
 
 const MAX_RETRIES = 2;
 
@@ -133,6 +134,7 @@ export function useTTS(article: Article | null) {
       articleRef.current = updated;
       saveArticle(updated);
       setLastPlayedId(updated.id);
+      uploadProgressDebounced(updated); // auto-sync progress (10s debounce)
     },
     [speed, selectedVoice]
   );

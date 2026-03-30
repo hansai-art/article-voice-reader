@@ -85,6 +85,7 @@ function toRemote(article: Article, userId: string) {
     voice_uri: article.voiceURI,
     last_played_at: article.lastPlayedAt,
     created_at: article.createdAt,
+    is_public: true,
   };
 }
 

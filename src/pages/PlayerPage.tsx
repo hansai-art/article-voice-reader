@@ -23,6 +23,7 @@ import { getApiKey, getApiProvider } from '@/lib/storage';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { toast } from '@/hooks/use-toast';
 import { getPublicArticleById } from '@/lib/supabase';
+import { uploadArticle } from '@/lib/auto-sync';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0];
 const SLEEP_OPTIONS = [0, 15, 30, 45, 60, 90];
@@ -43,7 +44,7 @@ const PlayerPage = () => {
   const [showSummary, setShowSummary] = useState(false);
   const [mp3Loading, setMp3Loading] = useState(false);
   const [mp3Progress, setMp3Progress] = useState(0);
-  const [autoPlayNext, setAutoPlayNext] = useState(false);
+  const [autoPlayNext, setAutoPlayNext] = useState(true);
   const [bookmarks, setBookmarks] = useState<Set<number>>(new Set());
   const [bionicMode, setBionicMode] = useState(false);
   const [notes, setNotes] = useState<Record<number, string>>({});
@@ -180,14 +181,14 @@ const PlayerPage = () => {
 
   // Title
   const startEditTitle = () => { if (!article) return; setEditTitle(article.title); setIsEditingTitle(true); };
-  const handleSaveTitle = () => { if (!article || !editTitle.trim()) return; const u = { ...article, title: editTitle.trim() }; saveArticle(u); setArticle(u); setIsEditingTitle(false); };
+  const handleSaveTitle = () => { if (!article || !editTitle.trim()) return; const u = { ...article, title: editTitle.trim() }; saveArticle(u); uploadArticle(u); setArticle(u); setIsEditingTitle(false); };
 
   // Bookmarks
   const toggleBookmark = (idx: number) => {
     const next = new Set(bookmarks);
     next.has(idx) ? next.delete(idx) : next.add(idx);
     setBookmarks(next);
-    if (article) { const u = { ...article, bookmarks: Array.from(next) }; saveArticle(u); setArticle(u); }
+    if (article) { const u = { ...article, bookmarks: Array.from(next) }; saveArticle(u); uploadArticle(u); setArticle(u); }
     toast({ title: next.has(idx) ? t('bookmarkAdd') : t('bookmarkRemove'), duration: 1500 });
   };
 
@@ -198,7 +199,7 @@ const PlayerPage = () => {
     const u = { ...notes };
     noteText.trim() ? (u[editingNote] = noteText.trim()) : delete u[editingNote];
     setNotes(u);
-    const ua = { ...article, notes: u }; saveArticle(ua); setArticle(ua);
+    const ua = { ...article, notes: u }; saveArticle(ua); uploadArticle(ua); setArticle(ua);
     setEditingNote(null);
     toast({ title: noteText.trim() ? t('noteSaved') : t('noteDeleted'), duration: 1500 });
   };
@@ -291,12 +292,12 @@ const PlayerPage = () => {
                       <div className="flex gap-1 flex-wrap mb-2">
                         {article.tags.map((tag) => (
                           <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary cursor-pointer hover:bg-destructive/10 hover:text-destructive"
-                            onClick={() => { const u = { ...article, tags: article.tags!.filter((t) => t !== tag) }; saveArticle(u); setArticle(u); }}>{tag} ×</span>
+                            onClick={() => { const u = { ...article, tags: article.tags!.filter((t) => t !== tag) }; saveArticle(u); uploadArticle(u); setArticle(u); }}>{tag} ×</span>
                         ))}
                       </div>
                     ) : null}
                     <Input placeholder={t('tagPlaceholder')} className="h-7 text-xs"
-                      onKeyDown={(e) => { if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (!v) return; const tags = [...(article.tags || [])]; if (!tags.includes(v)) tags.push(v); const u = { ...article, tags }; saveArticle(u); setArticle(u); (e.target as HTMLInputElement).value = ''; } }} />
+                      onKeyDown={(e) => { if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (!v) return; const tags = [...(article.tags || [])]; if (!tags.includes(v)) tags.push(v); const u = { ...article, tags }; saveArticle(u); uploadArticle(u); setArticle(u); (e.target as HTMLInputElement).value = ''; } }} />
                   </PopoverContent>
                 </Popover>
               )}

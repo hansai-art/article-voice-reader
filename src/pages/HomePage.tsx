@@ -24,6 +24,7 @@ import { useLanguage } from '@/hooks/useLanguage';
 import { formatTimeAgo } from '@/lib/i18n';
 import { toast } from '@/hooks/use-toast';
 import { getUser, toggleArticlePublic } from '@/lib/supabase';
+import { deleteArticleRemote } from '@/lib/auto-sync';
 import { OnboardingTour, shouldShowOnboarding } from '@/components/OnboardingTour';
 import type { User } from '@supabase/supabase-js';
 
@@ -57,13 +58,14 @@ const HomePage = () => {
 
   const handleDelete = (id: string) => {
     deleteArticle(id);
+    deleteArticleRemote(id); // auto-sync: remove from cloud
     setArticles(getArticles());
     if (lastPlayedArticle?.id === id) setLastPlayedArticle(null);
     setDeleteTarget(null);
   };
 
   const handleTogglePublic = async (articleId: string) => {
-    const current = articlePublicMap[articleId] || false;
+    const current = articlePublicMap[articleId] ?? true;
     const next = !current;
     setArticlePublicMap((prev) => ({ ...prev, [articleId]: next }));
     await toggleArticlePublic(articleId, next);
@@ -335,9 +337,9 @@ const HomePage = () => {
                             e.stopPropagation();
                             handleTogglePublic(article.id);
                           }}
-                          title={articlePublicMap[article.id] ? t('publicLabel') : t('privateLabel')}
+                          title={(articlePublicMap[article.id] ?? true) ? t('publicLabel') : t('privateLabel')}
                         >
-                          {articlePublicMap[article.id] ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                          {(articlePublicMap[article.id] ?? true) ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                         </Button>
                       )}
                       <Button
