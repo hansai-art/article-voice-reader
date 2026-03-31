@@ -24,7 +24,29 @@ export function splitIntoParagraphs(text: string): string[] {
 
 export function splitIntoSentences(paragraph: string): string[] {
   const sentences = paragraph.split(/(?<=[。！？.!?])\s*/);
-  return sentences.filter((s) => s.trim().length > 0);
+  const result: string[] = [];
+  for (const s of sentences) {
+    const trimmed = s.trim();
+    if (trimmed.length === 0) continue;
+    // Chrome speechSynthesis 對長句會靜默卡死，限制每段最多 80 字
+    if (trimmed.length > 80) {
+      // 用逗號、分號、冒號等次要斷點再切
+      const sub = trimmed.split(/(?<=[，,；;：:、])\s*/);
+      let buf = '';
+      for (const part of sub) {
+        if (buf.length + part.length > 80 && buf.length > 0) {
+          result.push(buf);
+          buf = part;
+        } else {
+          buf += part;
+        }
+      }
+      if (buf.length > 0) result.push(buf);
+    } else {
+      result.push(trimmed);
+    }
+  }
+  return result;
 }
 
 export class WebSpeechTTS implements TTSEngine {
@@ -109,12 +131,13 @@ export class WebSpeechTTS implements TTSEngine {
 
   private startResumeInterval() {
     this.stopResumeInterval();
-    // Every 10 seconds, call resume() to prevent Chrome's auto-pause
+    // Every 5 seconds, call pause+resume to prevent Chrome's auto-pause bug
     this.resumeInterval = setInterval(() => {
       if (this.synth.speaking && !this.synth.paused) {
+        this.synth.pause();
         this.synth.resume();
       }
-    }, 10000);
+    }, 5000);
   }
 
   private stopResumeInterval() {

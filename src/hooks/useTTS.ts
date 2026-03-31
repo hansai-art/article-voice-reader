@@ -14,21 +14,23 @@ import { uploadProgressDebounced } from '@/lib/auto-sync';
 
 const MAX_RETRIES = 2;
 
-/** Sort voices: zh-TW first, then zh-CN/zh-HK, then other zh, then rest alphabetically */
-function sortVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice[] {
-  return [...voices].sort((a, b) => {
-    const rank = (v: SpeechSynthesisVoice) => {
-      if (v.lang === 'zh-TW' || v.lang === 'zh_TW') return 0;
-      if (v.lang === 'zh-HK' || v.lang === 'zh_HK') return 1;
-      if (v.lang === 'zh-CN' || v.lang === 'zh_CN') return 2;
-      if (v.lang.startsWith('zh')) return 3;
-      if (v.lang.startsWith('en')) return 4;
-      return 5;
-    };
-    const diff = rank(a) - rank(b);
-    if (diff !== 0) return diff;
-    return a.name.localeCompare(b.name);
-  });
+/** Filter to zh + en only, sort: zh-TW first, then other zh, then en */
+function filterAndSortVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice[] {
+  return voices
+    .filter((v) => v.lang.startsWith('zh') || v.lang.startsWith('en'))
+    .sort((a, b) => {
+      const rank = (v: SpeechSynthesisVoice) => {
+        if (v.lang === 'zh-TW' || v.lang === 'zh_TW') return 0;
+        if (v.lang === 'zh-HK' || v.lang === 'zh_HK') return 1;
+        if (v.lang === 'zh-CN' || v.lang === 'zh_CN') return 2;
+        if (v.lang.startsWith('zh')) return 3;
+        if (v.lang.startsWith('en')) return 4;
+        return 5;
+      };
+      const diff = rank(a) - rank(b);
+      if (diff !== 0) return diff;
+      return a.name.localeCompare(b.name);
+    });
 }
 
 export function useTTS(article: Article | null) {
@@ -87,7 +89,7 @@ export function useTTS(article: Article | null) {
   useEffect(() => {
     const loadVoices = () => {
       const raw = webTTSRef.current.getVoices();
-      const sorted = sortVoices(raw);
+      const sorted = filterAndSortVoices(raw);
       setVoices(sorted);
       if (!selectedVoice && sorted.length > 0) {
         // Auto-detect language from article content and pick matching voice
@@ -322,11 +324,18 @@ export function useTTS(article: Article | null) {
     (newSpeed: number) => {
       setSpeed(newSpeed);
       setGlobalSpeed(newSpeed);
-      if (isPlaying) {
+      // 播放中調速：停止當前語音，用新速度從同一句重播
+      if (isPlaying && playingRef.current) {
         getEngine().stop();
+        // 用 setTimeout 確保 stop 完成後再 speak
+        setTimeout(() => {
+          if (playingRef.current) {
+            speakSentence(paragraphIndex, sentenceIndex);
+          }
+        }, 100);
       }
     },
-    [isPlaying, getEngine]
+    [isPlaying, paragraphIndex, sentenceIndex, speakSentence, getEngine]
   );
 
   const switchEngine = useCallback(
@@ -395,13 +404,15 @@ export function useTTS(article: Article | null) {
     [paragraphIndex, sentenceIndex, speakSentence, getEngine]
   );
 
-  // Re-speak when speed changes during playback
+  // Re-speak when voice changes during playback (speed is handled in changeSpeed)
   useEffect(() => {
     if (isPlaying && playingRef.current) {
       getEngine().stop();
-      speakSentence(paragraphIndex, sentenceIndex);
+      setTimeout(() => {
+        if (playingRef.current) speakSentence(paragraphIndex, sentenceIndex);
+      }, 100);
     }
-  }, [speed, selectedVoice]);
+  }, [selectedVoice]);
 
   // Cleanup
   useEffect(() => {

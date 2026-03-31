@@ -475,11 +475,12 @@ const PlayerPage = () => {
                 <div className="flex items-center justify-between gap-1 pt-1 border-t border-border">
                   {/* TTS engine */}
                   <Button variant="ghost" size="icon" className={`h-9 w-9 ${engineType === 'openai' ? 'text-accent' : ''}`}
+                    title={engineType === 'openai' ? t('ttsEngineOpenai') : t('ttsEngineBrowser')}
                     onClick={() => switchEngine(engineType === 'openai' ? 'browser' : 'openai')}>
                     {engineType === 'openai' ? <Bot className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                   </Button>
                   {/* Font size */}
-                  <div className="flex items-center">
+                  <div className="flex items-center" title={t('fontSize')}>
                     <Button variant="ghost" size="icon" className="h-9 w-8" onClick={() => changeFontSize(-1)} disabled={fontSize <= FONT_MIN}><Minus className="h-3 w-3" /></Button>
                     <span className="text-[10px] text-muted-foreground w-5 text-center">{fontSize}</span>
                     <Button variant="ghost" size="icon" className="h-9 w-8" onClick={() => changeFontSize(1)} disabled={fontSize >= FONT_MAX}><Plus className="h-3 w-3" /></Button>
@@ -487,7 +488,7 @@ const PlayerPage = () => {
                   {/* Reading theme */}
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-9 w-9"><Palette className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-9 w-9" title={t('readingTheme')}><Palette className="h-4 w-4" /></Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-36 p-2" align="start">
                       <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('readingTheme')}</p>
@@ -505,25 +506,31 @@ const PlayerPage = () => {
                   </Popover>
                   {/* Bionic */}
                   <Button variant="ghost" size="icon" className={`h-9 w-9 ${bionicMode ? 'text-accent' : ''}`}
+                    title={t('bionicReading')}
                     onClick={() => setBionicMode(!bionicMode)}><Type className="h-4 w-4" /></Button>
                   {/* RSVP */}
                   <Button variant="ghost" size="icon" className={`h-9 w-9 ${rsvpMode ? 'text-accent' : ''}`}
+                    title={t('rsvpMode')}
                     onClick={() => setRsvpMode(!rsvpMode)}><Zap className="h-4 w-4" /></Button>
                   {/* Note */}
                   <Button variant="ghost" size="icon" className="h-9 w-9"
+                    title={t('noteAdd')}
                     onClick={() => editingNote !== null ? setEditingNote(null) : startNote(paragraphIndex)}><MessageSquare className="h-4 w-4" /></Button>
                   {/* Immersive */}
                   <Button variant="ghost" size="icon" className={`h-9 w-9 ${immersiveMode ? 'text-accent' : ''}`}
+                    title={t('immersiveMode')}
                     onClick={() => setImmersiveMode(!immersiveMode)}>{immersiveMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</Button>
-                  {/* Auto-play */}
-                  <Button variant="ghost" size="icon" className={`h-9 w-9 ${autoPlayNext ? 'text-accent' : ''}`}
+                  {/* Auto-play next: show ON/OFF label for clarity */}
+                  <Button variant="ghost" size="sm" className={`h-9 px-2 gap-1 text-xs ${autoPlayNext ? 'text-accent' : 'text-muted-foreground'}`}
+                    title={t('autoPlayNext')}
                     onClick={() => { setAutoPlayNext(!autoPlayNext); toast({ title: !autoPlayNext ? t('autoPlayNextOn') : t('autoPlayNextOff'), duration: 1500 }); }}>
                     <ListOrdered className="h-4 w-4" />
+                    {autoPlayNext ? 'ON' : 'OFF'}
                   </Button>
                   {/* Sleep */}
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="ghost" size="icon" className={`h-9 w-9 ${sleepMinutes > 0 ? 'text-accent' : ''}`}><Timer className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className={`h-9 w-9 ${sleepMinutes > 0 ? 'text-accent' : ''}`} title={t('sleepTimer')}><Timer className="h-4 w-4" /></Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-44 p-2" align="end">
                       <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('sleepTimer')}</p>
