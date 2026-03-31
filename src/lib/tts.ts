@@ -1,3 +1,5 @@
+import { diagLog } from './diagnostics';
+
 export interface TTSEngine {
   speak(
     text: string,
@@ -22,26 +24,32 @@ export function splitIntoParagraphs(text: string): string[] {
     .filter((p) => p.length > 0);
 }
 
-export function splitIntoSentences(paragraph: string): string[] {
+export function splitIntoSentences(paragraph: string, maxLength: number = 80): string[] {
   const sentences = paragraph.split(/(?<=[。！？.!?])\s*/);
   const result: string[] = [];
   for (const s of sentences) {
     const trimmed = s.trim();
     if (trimmed.length === 0) continue;
-    // Chrome speechSynthesis 對長句會靜默卡死，限制每段最多 80 字
-    if (trimmed.length > 80) {
+    if (trimmed.length > maxLength) {
       // 用逗號、分號、冒號等次要斷點再切
       const sub = trimmed.split(/(?<=[，,；;：:、])\s*/);
       let buf = '';
       for (const part of sub) {
-        if (buf.length + part.length > 80 && buf.length > 0) {
+        if (buf.length + part.length > maxLength && buf.length > 0) {
           result.push(buf);
           buf = part;
         } else {
           buf += part;
         }
       }
-      if (buf.length > 0) result.push(buf);
+      // 如果還是太長（沒有次要斷點），強制按長度切
+      if (buf.length > maxLength) {
+        for (let i = 0; i < buf.length; i += maxLength) {
+          result.push(buf.slice(i, i + maxLength));
+        }
+      } else if (buf.length > 0) {
+        result.push(buf);
+      }
     } else {
       result.push(trimmed);
     }
@@ -111,6 +119,7 @@ export class WebSpeechTTS implements TTSEngine {
     this.startWatchdog(estimatedMs, () => {
       if (this.intentionallyStopped) return;
       console.warn(`[TTS Watchdog] Utterance stalled after ${estimatedMs}ms, forcing retry`);
+      diagLog('tts_watchdog', `Stall detected after ${estimatedMs}ms: "${text.slice(0, 50)}..."`, { textLength: text.length, rate });
       this.synth.cancel();
       // Re-speak the same text
       setTimeout(() => {

@@ -11,6 +11,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { t } from '@/lib/i18n';
 import { uploadProgressDebounced } from '@/lib/auto-sync';
+import { detectDevice, getTTSLimits, diagLog } from '@/lib/diagnostics';
 
 const MAX_RETRIES = 2;
 
@@ -51,9 +52,20 @@ export function useTTS(article: Article | null) {
   const playStartTimeRef = useRef<number>(0);
   const engineTypeRef = useRef(engineType);
 
+  // Device-aware TTS limits
+  const deviceRef = useRef(detectDevice());
+  const ttsLimits = useRef(getTTSLimits(deviceRef.current));
+
   const paragraphs = article ? splitIntoParagraphs(article.content) : [];
   const paragraphsRef = useRef(paragraphs);
   paragraphsRef.current = paragraphs;
+
+  // Log device info on first mount
+  useEffect(() => {
+    const d = deviceRef.current;
+    const limits = ttsLimits.current;
+    diagLog('info', `Device: ${d.os} ${d.osVersion} / ${d.browser} ${d.browserVersion} / ${d.mobile ? 'mobile' : 'desktop'} / maxLen=${limits.maxUtteranceLength}`);
+  }, []);
 
   // Keep ref in sync
   useEffect(() => {
@@ -147,12 +159,12 @@ export function useTTS(article: Article | null) {
       if (engineTypeRef.current !== 'openai' || !openaiTTSRef.current) return;
       const paras = paragraphsRef.current;
       if (pIdx >= paras.length) return;
-      const sentences = splitIntoSentences(paras[pIdx]);
+      const sentences = splitIntoSentences(paras[pIdx], ttsLimits.current.maxUtteranceLength);
       let nextText: string | null = null;
       if (sIdx + 1 < sentences.length) {
         nextText = sentences[sIdx + 1];
       } else if (pIdx + 1 < paras.length) {
-        const nextSentences = splitIntoSentences(paras[pIdx + 1]);
+        const nextSentences = splitIntoSentences(paras[pIdx + 1], ttsLimits.current.maxUtteranceLength);
         if (nextSentences.length > 0) nextText = nextSentences[0];
       }
       if (nextText) {
@@ -179,7 +191,7 @@ export function useTTS(article: Article | null) {
         return;
       }
 
-      const sentences = splitIntoSentences(paras[pIdx]);
+      const sentences = splitIntoSentences(paras[pIdx], ttsLimits.current.maxUtteranceLength);
       if (sIdx >= sentences.length) {
         const nextP = pIdx + 1;
         setParagraphIndex(nextP);
@@ -211,6 +223,7 @@ export function useTTS(article: Article | null) {
         undefined,
         (error, detail) => {
           console.error(`[TTS Error] ${detail}`);
+          diagLog('tts_error', `${error}: ${detail}`, { pIdx, sIdx, engine: engineTypeRef.current });
 
           // If OpenAI fails, fall back to browser TTS
           if (engineTypeRef.current === 'openai') {
@@ -246,6 +259,7 @@ export function useTTS(article: Article | null) {
             // Retry exhausted: skip this sentence and continue playing
             retryCountRef.current = 0;
             console.warn(`[TTS] Skipping sentence after ${MAX_RETRIES} retries: "${sentences[sIdx].slice(0, 30)}..."`);
+            diagLog('tts_skip', `Skipped: "${sentences[sIdx].slice(0, 50)}..."`, { pIdx, sIdx });
             toast({
               title: t('ttsSkipped'),
               duration: 3000,

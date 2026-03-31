@@ -19,6 +19,7 @@ import {
 import { syncArticles } from '@/lib/sync';
 import { toast } from '@/hooks/use-toast';
 import type { User } from '@supabase/supabase-js';
+import { getDiagSummary, getDiagData, clearDiagLogs } from '@/lib/diagnostics';
 
 const SettingsPage = () => {
   const navigate = useNavigate();
@@ -447,6 +448,28 @@ const SettingsPage = () => {
               <span className="opacity-50">{t('proFeatureVoice')}</span>
             </li>
           </ul>
+        </Card>
+
+        {/* Diagnostics */}
+        <Card className="p-5 space-y-3">
+          <h2 className="font-semibold text-muted-foreground">{lang === 'zh-TW' ? '裝置診斷' : 'Device Diagnostics'}</h2>
+          <pre className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 whitespace-pre-wrap font-mono">
+            {getDiagSummary()}
+          </pre>
+          <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => {
+            const data = getDiagData();
+            const recent = data.logs.slice(-20).reverse();
+            const text = recent.map((l) => `[${new Date(l.ts).toLocaleTimeString()}] ${l.type}: ${l.message}`).join('\n') || (lang === 'zh-TW' ? '（無錯誤記錄）' : '(No error logs)');
+            toast({ title: lang === 'zh-TW' ? '最近 20 筆記錄' : 'Last 20 logs', description: text, duration: 15000 });
+          }}>
+            {lang === 'zh-TW' ? '查看錯誤記錄' : 'View Error Logs'}
+          </Button>
+          <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground" onClick={() => {
+            clearDiagLogs();
+            toast({ title: lang === 'zh-TW' ? '已清除記錄' : 'Logs cleared', duration: 1500 });
+          }}>
+            {lang === 'zh-TW' ? '清除記錄' : 'Clear Logs'}
+          </Button>
         </Card>
       </main>
     </div>
