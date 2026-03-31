@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward,
   Pencil, Check, X, Minus, Plus, Sparkles, Loader2, Download,
-  Volume2, Bot, Bookmark, ListOrdered, List, Type, MessageSquare, Tag,
+  Volume2, Bot, Bookmark, List, Type, MessageSquare, Tag,
   Settings2, Eye, EyeOff, Timer, Palette, Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -44,7 +44,7 @@ const PlayerPage = () => {
   const [showSummary, setShowSummary] = useState(false);
   const [mp3Loading, setMp3Loading] = useState(false);
   const [mp3Progress, setMp3Progress] = useState(0);
-  const [autoPlayNext, setAutoPlayNext] = useState(true);
+  // Auto-play next is always on (no toggle needed)
   const [bookmarks, setBookmarks] = useState<Set<number>>(new Set());
   const [bionicMode, setBionicMode] = useState(false);
   const [notes, setNotes] = useState<Record<number, string>>({});
@@ -96,10 +96,10 @@ const PlayerPage = () => {
     engineType, switchEngine, openaiVoice, changeOpenAIVoice, openaiVoices, setOnFinished,
   } = useTTS(article);
 
-  // Auto-play next
+  // Auto-play next (always on)
   useEffect(() => {
     setOnFinished(() => {
-      if (!autoPlayNext || !article) return;
+      if (!article) return;
       const all = getArticles();
       const idx = all.findIndex((a) => a.id === article.id);
       const next = all[idx + 1];
@@ -108,7 +108,7 @@ const PlayerPage = () => {
         navigate(`/player/${next.id}`);
       }
     });
-  }, [autoPlayNext, article, navigate, setOnFinished, t]);
+  }, [article, navigate, setOnFinished, t]);
 
   // Wake lock
   useEffect(() => {
@@ -281,6 +281,24 @@ const PlayerPage = () => {
                     ))}
                 </PopoverContent>
               </Popover>
+              {/* Sleep timer in header */}
+              {!isPublicView && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className={`h-8 w-8 shrink-0 ${sleepMinutes > 0 ? 'text-accent' : 'text-muted-foreground'}`} title={t('sleepTimer')}>
+                      <Timer className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-44 p-2" align="end">
+                    <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('sleepTimer')}</p>
+                    {SLEEP_OPTIONS.map((m) => (
+                      <Button key={m} variant={sleepMinutes === m ? 'secondary' : 'ghost'} className="w-full justify-start text-sm h-8"
+                        onClick={() => startSleepTimer(m)}>{m === 0 ? t('sleepTimerOff') : `${m} ${t('sleepTimerSet')}`}</Button>
+                    ))}
+                    {sleepRemaining > 0 && <p className="text-xs text-accent px-2 pt-1">{t('sleepTimerActive').replace('{min}', String(sleepRemaining))}</p>}
+                  </PopoverContent>
+                </Popover>
+              )}
               {!isPublicView && (
                 <Popover>
                   <PopoverTrigger asChild>
@@ -520,27 +538,6 @@ const PlayerPage = () => {
                   <Button variant="ghost" size="icon" className={`h-9 w-9 ${immersiveMode ? 'text-accent' : ''}`}
                     title={t('immersiveMode')}
                     onClick={() => setImmersiveMode(!immersiveMode)}>{immersiveMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</Button>
-                  {/* Auto-play next: show ON/OFF label for clarity */}
-                  <Button variant="ghost" size="sm" className={`h-9 px-2 gap-1 text-xs ${autoPlayNext ? 'text-accent' : 'text-muted-foreground'}`}
-                    title={t('autoPlayNext')}
-                    onClick={() => { setAutoPlayNext(!autoPlayNext); toast({ title: !autoPlayNext ? t('autoPlayNextOn') : t('autoPlayNextOff'), duration: 1500 }); }}>
-                    <ListOrdered className="h-4 w-4" />
-                    {autoPlayNext ? 'ON' : 'OFF'}
-                  </Button>
-                  {/* Sleep */}
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="ghost" size="icon" className={`h-9 w-9 ${sleepMinutes > 0 ? 'text-accent' : ''}`} title={t('sleepTimer')}><Timer className="h-4 w-4" /></Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-44 p-2" align="end">
-                      <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('sleepTimer')}</p>
-                      {SLEEP_OPTIONS.map((m) => (
-                        <Button key={m} variant={sleepMinutes === m ? 'secondary' : 'ghost'} className="w-full justify-start text-sm h-8"
-                          onClick={() => startSleepTimer(m)}>{m === 0 ? t('sleepTimerOff') : `${m} ${t('sleepTimerSet')}`}</Button>
-                      ))}
-                      {sleepRemaining > 0 && <p className="text-xs text-accent px-2 pt-1">{t('sleepTimerActive').replace('{min}', String(sleepRemaining))}</p>}
-                    </PopoverContent>
-                  </Popover>
                   {/* MP3 Export */}
                   <Popover>
                     <PopoverTrigger asChild>
