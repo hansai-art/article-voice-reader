@@ -243,15 +243,16 @@ export function useTTS(article: Article | null) {
               }
             }, 800);
           } else {
+            // Retry exhausted: skip this sentence and continue playing
             retryCountRef.current = 0;
-            setIsPlaying(false);
-            playingRef.current = false;
+            console.warn(`[TTS] Skipping sentence after ${MAX_RETRIES} retries: "${sentences[sIdx].slice(0, 30)}..."`);
             toast({
-              title: t('ttsError'),
-              description: `Error: ${error} | ${detail}`,
-              variant: 'destructive',
-              duration: 8000,
+              title: t('ttsSkipped'),
+              duration: 3000,
             });
+            if (playingRef.current) {
+              setTimeout(() => speakSentence(pIdx, sIdx + 1), 300);
+            }
           }
         }
       );

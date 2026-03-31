@@ -53,6 +53,8 @@ export class WebSpeechTTS implements TTSEngine {
   private synth = window.speechSynthesis;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
   private resumeInterval: ReturnType<typeof setInterval> | null = null;
+  private watchdog: ReturnType<typeof setTimeout> | null = null;
+  private intentionallyStopped = false;
 
   speak(
     text: string,
@@ -62,8 +64,8 @@ export class WebSpeechTTS implements TTSEngine {
     onBoundary?: (charIndex: number) => void,
     onError?: (error: string, detail: string) => void
   ) {
-    // Don't cancel before speaking — just let the new utterance queue
-    // Only cancel if something is actively speaking and we need to interrupt
+    this.intentionallyStopped = false;
+
     if (this.synth.speaking || this.synth.pending) {
       this.synth.cancel();
     }
@@ -72,14 +74,18 @@ export class WebSpeechTTS implements TTSEngine {
     utterance.rate = rate;
     if (voice) utterance.voice = voice;
 
-    utterance.onend = () => {
+    const cleanup = () => {
       this.stopResumeInterval();
+      this.stopWatchdog();
+    };
+
+    utterance.onend = () => {
+      cleanup();
       onEnd();
     };
 
     utterance.onerror = (e) => {
-      this.stopResumeInterval();
-      // "canceled" and "interrupted" are expected when we stop/skip — not real errors
+      cleanup();
       if (e.error === 'canceled' || e.error === 'interrupted') return;
       if (onError) {
         const detail = `error="${e.error}" text="${text.slice(0, 50)}..." voice="${voice?.name || 'none'}" rate=${rate}`;
@@ -96,25 +102,50 @@ export class WebSpeechTTS implements TTSEngine {
     this.currentUtterance = utterance;
     this.synth.speak(utterance);
 
-    // Chrome bug workaround: speechSynthesis pauses after ~15s without interaction
-    // Periodically call resume() to keep it going
+    // Chrome bug workaround: periodically pause+resume
     this.startResumeInterval();
+
+    // Watchdog: if onend/onerror never fires, force retry
+    // Estimate max duration: ~150ms per char at rate 1, min 8s, max 30s
+    const estimatedMs = Math.min(30000, Math.max(8000, (text.length * 150) / rate));
+    this.startWatchdog(estimatedMs, () => {
+      if (this.intentionallyStopped) return;
+      console.warn(`[TTS Watchdog] Utterance stalled after ${estimatedMs}ms, forcing retry`);
+      this.synth.cancel();
+      // Re-speak the same text
+      setTimeout(() => {
+        if (!this.intentionallyStopped) {
+          this.speak(text, rate, voice, onEnd, onBoundary, onError);
+        }
+      }, 200);
+    });
   }
 
   stop() {
+    this.intentionallyStopped = true;
     this.stopResumeInterval();
+    this.stopWatchdog();
     this.synth.cancel();
     this.currentUtterance = null;
   }
 
   pause() {
     this.stopResumeInterval();
+    this.stopWatchdog();
     this.synth.pause();
   }
 
   resume() {
     this.synth.resume();
     this.startResumeInterval();
+    // Restart watchdog on resume
+    if (this.currentUtterance) {
+      this.startWatchdog(15000, () => {
+        if (this.intentionallyStopped) return;
+        console.warn('[TTS Watchdog] Stalled after resume, forcing next');
+        this.synth.cancel();
+      });
+    }
   }
 
   isPaused() {
@@ -131,7 +162,6 @@ export class WebSpeechTTS implements TTSEngine {
 
   private startResumeInterval() {
     this.stopResumeInterval();
-    // Every 5 seconds, call pause+resume to prevent Chrome's auto-pause bug
     this.resumeInterval = setInterval(() => {
       if (this.synth.speaking && !this.synth.paused) {
         this.synth.pause();
@@ -144,6 +174,18 @@ export class WebSpeechTTS implements TTSEngine {
     if (this.resumeInterval) {
       clearInterval(this.resumeInterval);
       this.resumeInterval = null;
+    }
+  }
+
+  private startWatchdog(timeoutMs: number, onTimeout: () => void) {
+    this.stopWatchdog();
+    this.watchdog = setTimeout(onTimeout, timeoutMs);
+  }
+
+  private stopWatchdog() {
+    if (this.watchdog) {
+      clearTimeout(this.watchdog);
+      this.watchdog = null;
     }
   }
 }
