@@ -10,6 +10,7 @@ import PlayerPage from "./pages/PlayerPage";
 import SettingsPage from "./pages/SettingsPage";
 import NotFound from "./pages/NotFound";
 import PublicProfilePage from "./pages/PublicProfilePage";
+import AdminPage from "./pages/AdminPage";
 import { pullRemoteArticles } from "./lib/auto-sync";
 import { getUser } from "./lib/supabase";
 
@@ -41,6 +42,7 @@ const App = () => {
           <Route path="/add" element={<AddArticlePage />} />
           <Route path="/player/:id" element={<PlayerPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="/:username" element={<PublicProfilePage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
