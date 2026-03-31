@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, RefreshCw, Trash2, Smartphone, Monitor, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Trash2, Smartphone, Monitor, Lock, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { getSupabase, getUser } from '@/lib/supabase';
+import { Input } from '@/components/ui/input';
+import { getSupabase, signIn, getUser } from '@/lib/supabase';
 import { useLanguage } from '@/hooks/useLanguage';
 
 interface ErrorReport {
@@ -19,8 +20,7 @@ interface ErrorReport {
   created_at: string;
 }
 
-// Admin email whitelist
-const ADMIN_EMAILS = ['hanslintw@gmail.com'];
+const ADMIN_EMAIL = 'hans@groupg.org';
 
 const EVENT_LABELS: Record<string, { label: string; color: string }> = {
   tts_error: { label: 'TTS Error', color: 'text-red-500' },
@@ -35,31 +35,53 @@ const AdminPage = () => {
   const navigate = useNavigate();
   const { lang } = useLanguage();
   const [reports, setReports] = useState<ErrorReport[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [authorized, setAuthorized] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
   const [filter, setFilter] = useState<string>('all');
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  // Check admin access
+  // Check if already logged in as admin
   useEffect(() => {
     (async () => {
       const user = await getUser();
-      if (user && ADMIN_EMAILS.includes(user.email || '')) {
+      if (user?.email === ADMIN_EMAIL) {
         setAuthorized(true);
+        setChecking(false);
         fetchReports();
       } else {
-        setAuthorized(false);
-        setLoading(false);
+        setChecking(false);
       }
     })();
   }, []);
+
+  const handleLogin = async () => {
+    if (!password.trim()) return;
+    setLoginError('');
+    try {
+      const user = await signIn(ADMIN_EMAIL, password);
+      if (user) {
+        setAuthorized(true);
+        fetchReports();
+      }
+    } catch {
+      setLoginError(lang === 'zh-TW' ? '密碼錯誤' : 'Wrong password');
+    }
+  };
 
   const fetchReports = async () => {
     setLoading(true);
     const sb = getSupabase();
     if (!sb) { setLoading(false); return; }
 
-    const { data, error } = await sb.rpc('get_all_error_reports', { row_limit: 500 });
+    const { data, error } = await sb
+      .from('error_reports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500);
+
     if (error) {
       console.error('Failed to fetch reports:', error);
       setLoading(false);
@@ -72,9 +94,8 @@ const AdminPage = () => {
   const handleClearOld = async () => {
     const sb = getSupabase();
     if (!sb) return;
-    // Delete reports older than 7 days
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    await sb.rpc('delete_old_error_reports', { before_date: cutoff });
+    await sb.from('error_reports').delete().lt('created_at', cutoff);
     fetchReports();
   };
 
@@ -101,14 +122,33 @@ const AdminPage = () => {
     return reports.filter((r) => r.event_type === filter);
   }, [reports, filter]);
 
-  if (!loading && !authorized) {
+  // Loading state
+  if (checking) return null;
+
+  // Login screen
+  if (!authorized) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="p-8 text-center space-y-3">
-          <AlertTriangle className="h-12 w-12 mx-auto text-destructive" />
-          <h1 className="text-lg font-bold">{lang === 'zh-TW' ? '無權限存取' : 'Access Denied'}</h1>
-          <p className="text-sm text-muted-foreground">{lang === 'zh-TW' ? '僅限管理員存取' : 'Admin access only'}</p>
-          <Button onClick={() => navigate('/')}>{lang === 'zh-TW' ? '返回首頁' : 'Go Home'}</Button>
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <Card className="p-8 w-full max-w-xs space-y-4">
+          <div className="text-center">
+            <Lock className="h-10 w-10 mx-auto text-muted-foreground mb-2" />
+            <h1 className="text-lg font-bold">{lang === 'zh-TW' ? '後台登入' : 'Admin Login'}</h1>
+          </div>
+          <Input
+            type="password"
+            placeholder={lang === 'zh-TW' ? '輸入密碼' : 'Enter password'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
+            autoFocus
+          />
+          {loginError && <p className="text-xs text-destructive text-center">{loginError}</p>}
+          <Button className="w-full" onClick={handleLogin}>
+            {lang === 'zh-TW' ? '登入' : 'Login'}
+          </Button>
+          <Button variant="ghost" className="w-full text-xs" onClick={() => navigate('/')}>
+            {lang === 'zh-TW' ? '返回首頁' : 'Go Home'}
+          </Button>
         </Card>
       </div>
     );
