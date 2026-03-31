@@ -3,8 +3,13 @@
  * Auto-detects device/browser/OS, logs TTS events for debugging.
  */
 
+import { getSupabase, getUser } from './supabase';
+
 const DIAG_KEY = 'article-reader-diagnostics';
 const MAX_LOGS = 200;
+const REPORT_BATCH_KEY = 'article-reader-diag-pending';
+const REPORT_INTERVAL = 60000; // batch upload every 60s
+let reportTimer: ReturnType<typeof setTimeout> | null = null;
 
 export interface DeviceInfo {
   os: string;
@@ -165,14 +170,16 @@ function saveData(data: DiagData) {
 
 export function diagLog(type: DiagLog['type'], message: string, meta?: Record<string, unknown>) {
   const data = loadData();
-  data.device = detectDevice(); // refresh device info
+  data.device = detectDevice();
   data.lastSeen = Date.now();
-  data.logs.push({ ts: Date.now(), type, message, meta });
-  // Keep only last N logs
+  const log: DiagLog = { ts: Date.now(), type, message, meta };
+  data.logs.push(log);
   if (data.logs.length > MAX_LOGS) {
     data.logs = data.logs.slice(-MAX_LOGS);
   }
   saveData(data);
+  // Queue error types for remote reporting
+  queueForReport(log);
 }
 
 export function getDiagData(): DiagData {
@@ -185,6 +192,84 @@ export function clearDiagLogs() {
   const data = loadData();
   data.logs = [];
   saveData(data);
+}
+
+// ── Remote error reporting (Supabase) ──
+
+function getPendingReports(): DiagLog[] {
+  try {
+    return JSON.parse(localStorage.getItem(REPORT_BATCH_KEY) || '[]');
+  } catch { return []; }
+}
+
+function savePendingReports(logs: DiagLog[]) {
+  try {
+    localStorage.setItem(REPORT_BATCH_KEY, JSON.stringify(logs));
+  } catch { /* */ }
+}
+
+function queueForReport(log: DiagLog) {
+  // Only report errors, not info
+  if (log.type === 'info') return;
+  const pending = getPendingReports();
+  pending.push(log);
+  // Cap pending to avoid localStorage bloat
+  if (pending.length > 50) pending.splice(0, pending.length - 50);
+  savePendingReports(pending);
+  scheduleFlush();
+}
+
+function scheduleFlush() {
+  if (reportTimer) return;
+  reportTimer = setTimeout(() => {
+    reportTimer = null;
+    flushReports();
+  }, REPORT_INTERVAL);
+}
+
+async function flushReports() {
+  const pending = getPendingReports();
+  if (pending.length === 0) return;
+
+  const sb = getSupabase();
+  if (!sb) return;
+
+  // Get user (optional, anonymous reports are fine)
+  let userId: string | null = null;
+  try {
+    const user = await getUser();
+    userId = user?.id || null;
+  } catch { /* */ }
+
+  const device = detectDevice();
+  const rows = pending.map((log) => ({
+    user_id: userId,
+    event_type: log.type,
+    message: log.message,
+    meta: log.meta || {},
+    device_os: `${device.os} ${device.osVersion}`,
+    device_browser: `${device.browser} ${device.browserVersion}`,
+    device_mobile: device.mobile,
+    screen: `${device.screenWidth}x${device.screenHeight}`,
+    created_at: new Date(log.ts).toISOString(),
+  }));
+
+  const { error } = await sb.from('error_reports').insert(rows);
+  if (!error) {
+    // Clear pending on success
+    savePendingReports([]);
+  } else {
+    console.warn('[diagnostics] Failed to flush reports:', error.message);
+  }
+}
+
+// Flush on page unload
+if (typeof window !== 'undefined') {
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      flushReports();
+    }
+  });
 }
 
 // ── Summary for display ──
