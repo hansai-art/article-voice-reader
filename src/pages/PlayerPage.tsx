@@ -140,18 +140,23 @@ const PlayerPage = () => {
 
   // Sleep timer — only counts down while playing
   const sleepEndTimeRef = useRef<number>(0);
-  const startSleepTimer = useCallback((minutes: number) => {
+  const startSleepCountdown = useCallback(() => {
     if (sleepTimerRef.current) { clearInterval(sleepTimerRef.current); sleepTimerRef.current = null; }
-    setSleepMinutes(minutes);
-    if (minutes === 0) { setSleepRemaining(0); sleepEndTimeRef.current = 0; return; }
-    sleepEndTimeRef.current = Date.now() + minutes * 60 * 1000;
-    setSleepRemaining(minutes);
     sleepTimerRef.current = setInterval(() => {
       const left = Math.ceil((sleepEndTimeRef.current - Date.now()) / 60000);
       if (left <= 0) { pause(); setSleepMinutes(0); setSleepRemaining(0); sleepEndTimeRef.current = 0; clearInterval(sleepTimerRef.current!); sleepTimerRef.current = null; }
       else setSleepRemaining(left);
     }, 10000);
   }, [pause]);
+
+  const startSleepTimer = useCallback((minutes: number) => {
+    if (sleepTimerRef.current) { clearInterval(sleepTimerRef.current); sleepTimerRef.current = null; }
+    setSleepMinutes(minutes);
+    if (minutes === 0) { setSleepRemaining(0); sleepEndTimeRef.current = 0; return; }
+    sleepEndTimeRef.current = Date.now() + minutes * 60 * 1000;
+    setSleepRemaining(minutes);
+    startSleepCountdown();
+  }, [startSleepCountdown]);
 
   // Pause/resume sleep timer when playback pauses/resumes
   const sleepPausedAtRef = useRef<number>(0);
@@ -166,13 +171,9 @@ const PlayerPage = () => {
       const pausedDuration = Date.now() - sleepPausedAtRef.current;
       sleepEndTimeRef.current += pausedDuration;
       sleepPausedAtRef.current = 0;
-      sleepTimerRef.current = setInterval(() => {
-        const left = Math.ceil((sleepEndTimeRef.current - Date.now()) / 60000);
-        if (left <= 0) { pause(); setSleepMinutes(0); setSleepRemaining(0); sleepEndTimeRef.current = 0; clearInterval(sleepTimerRef.current!); sleepTimerRef.current = null; }
-        else setSleepRemaining(left);
-      }, 10000);
+      startSleepCountdown();
     }
-  }, [isPlaying, pause]);
+  }, [isPlaying, startSleepCountdown]);
 
   useEffect(() => { return () => { if (sleepTimerRef.current) clearInterval(sleepTimerRef.current); }; }, []);
 

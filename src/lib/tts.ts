@@ -66,6 +66,7 @@ export class WebSpeechTTS implements TTSEngine {
   private watchdogRetryCount = 0;
   private lastEstimatedMs = 0;
   private static readonly MAX_WATCHDOG_RETRIES = 2;
+  private static readonly WATCHDOG_BACKOFF_BASE_MS = 300;
 
   speak(
     text: string,
@@ -141,7 +142,7 @@ export class WebSpeechTTS implements TTSEngine {
       diagLog('tts_watchdog', `Stall detected after ${estimatedMs}ms: "${text.slice(0, 50)}..."`, { textLength: text.length, rate, retry: this.watchdogRetryCount });
       this.synth.cancel();
       // Re-speak the same text with exponential backoff
-      const backoff = this.watchdogRetryCount * 300;
+      const backoff = this.watchdogRetryCount * WebSpeechTTS.WATCHDOG_BACKOFF_BASE_MS;
       setTimeout(() => {
         if (!this.intentionallyStopped) {
           this.speak(text, rate, voice, onEnd, onBoundary, onError);

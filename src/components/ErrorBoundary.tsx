@@ -23,7 +23,6 @@ export class ErrorBoundary extends React.Component<
   }
 
   handleReload = () => {
-    this.setState({ hasError: false, error: null });
     window.location.href = '/';
   };
 
