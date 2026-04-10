@@ -26,6 +26,11 @@ import { getDiagSummary, getDiagData, clearDiagLogs } from '@/lib/diagnostics';
 const READY_POINTS = 25;
 const ATTENTION_POINTS = 15;
 const SETUP_POINTS = 0;
+const STATUS_POINTS = {
+  ready: READY_POINTS,
+  attention: ATTENTION_POINTS,
+  setup: SETUP_POINTS,
+} as const;
 
 const SettingsPage = () => {
   const navigate = useNavigate();
@@ -108,9 +113,7 @@ const SettingsPage = () => {
 
   const readinessScore = useMemo(
     () => Math.round(
-      upgradeItems.reduce((sum, item) => sum + (
-        item.status === 'ready' ? READY_POINTS : item.status === 'attention' ? ATTENTION_POINTS : SETUP_POINTS
-      ), 0)
+      upgradeItems.reduce((sum, item) => sum + STATUS_POINTS[item.status], 0)
     ),
     [upgradeItems]
   );
@@ -271,12 +274,12 @@ const SettingsPage = () => {
       setUser(u);
       toast({ title: t('loginSuccess') });
       // Auto-sync after login
-       try {
-         const result = await syncArticles();
-         refreshLibrary();
-         toast({
-           title: t('syncSuccess')
-             .replace('{up}', String(result.uploaded))
+      try {
+        const result = await syncArticles();
+        refreshLibrary();
+        toast({
+          title: t('syncSuccess')
+            .replace('{up}', String(result.uploaded))
             .replace('{down}', String(result.downloaded)),
         });
       } catch {
