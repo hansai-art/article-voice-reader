@@ -105,7 +105,11 @@ const HomePage = () => {
     const demo = getDemoArticle(lang);
     const article = createArticle(demo.content, demo.title);
     saveArticle(article);
-    uploadArticle(article);
+    void uploadArticle(article).then((uploaded) => {
+      if (!uploaded && currentUser) {
+        toast({ title: t('demoArticleSyncPending'), duration: 2500 });
+      }
+    });
     setArticles(getArticles());
     setLastPlayedArticle(article);
     toast({ title: t('demoArticleCreated'), duration: 2000 });
