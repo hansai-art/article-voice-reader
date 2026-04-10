@@ -65,7 +65,7 @@ const SettingsPage = () => {
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
   const [diagData, setDiagData] = useState(() => getDiagData());
   const [diagSummary, setDiagSummary] = useState(() => getDiagSummary());
-  const [articleCount, setArticleCount] = useState(() => getArticles().length);
+  const [articleCount, setArticleCount] = useState(0);
   const hasApiKey = apiKey.trim().length > 0;
   const playbackErrorCount = useMemo(
     () => diagData.logs.filter((log) => log.type === 'tts_error' || log.type === 'tts_stall').length,
@@ -137,7 +137,7 @@ const SettingsPage = () => {
     setup: t('upgradeStatusSetup'),
   } as const;
 
-  const refreshLibrary = () => setLibraryRefreshKey((current) => current + 1);
+  const triggerLibraryRefresh = () => setLibraryRefreshKey((current) => current + 1);
 
   useEffect(() => {
     if (isSupabaseConfigured()) {
@@ -179,7 +179,7 @@ const SettingsPage = () => {
     setSyncLoading(true);
     try {
       const result = await syncArticles();
-      refreshLibrary();
+      triggerLibraryRefresh();
       toast({
         title: t('syncSuccess')
           .replace('{up}', String(result.uploaded))
@@ -230,7 +230,7 @@ const SettingsPage = () => {
         // Auto-sync after registration
         try {
           const result = await syncArticles();
-          refreshLibrary();
+          triggerLibraryRefresh();
           toast({
             title: t('syncSuccess')
               .replace('{up}', String(result.uploaded))
@@ -248,7 +248,7 @@ const SettingsPage = () => {
         toast({ title: t('loginSuccess') });
         try {
           const result = await syncArticles();
-          refreshLibrary();
+          triggerLibraryRefresh();
           toast({
             title: t('syncSuccess')
               .replace('{up}', String(result.uploaded))
@@ -276,7 +276,7 @@ const SettingsPage = () => {
       // Auto-sync after login
       try {
         const result = await syncArticles();
-        refreshLibrary();
+        triggerLibraryRefresh();
         toast({
           title: t('syncSuccess')
             .replace('{up}', String(result.uploaded))
