@@ -74,7 +74,7 @@ const HomePage = () => {
   const [articlePublicMap, setArticlePublicMap] = useState<Record<string, boolean>>({});
   const [showOnboarding, setShowOnboarding] = useState(shouldShowOnboarding);
   const importRef = useRef<HTMLInputElement>(null);
-  const diagData = useMemo(() => getDiagData(), []);
+  const [diagData, setDiagData] = useState(() => getDiagData());
   const ttsLimits = useMemo(() => getTTSLimits(diagData.device), [diagData.device]);
   const playbackErrorCount = useMemo(
     () => diagData.logs.filter((log) => log.type === 'tts_error' || log.type === 'tts_stall').length,
@@ -93,6 +93,16 @@ const HomePage = () => {
     getUser().then(setCurrentUser);
   }, []);
 
+  useEffect(() => {
+    const refreshDiagnostics = () => setDiagData(getDiagData());
+    window.addEventListener('focus', refreshDiagnostics);
+    document.addEventListener('visibilitychange', refreshDiagnostics);
+    return () => {
+      window.removeEventListener('focus', refreshDiagnostics);
+      document.removeEventListener('visibilitychange', refreshDiagnostics);
+    };
+  }, []);
+
   const handleDelete = (id: string) => {
     deleteArticle(id);
     deleteArticleRemote(id); // auto-sync: remove from cloud
@@ -105,7 +115,7 @@ const HomePage = () => {
     const demo = getDemoArticle(lang);
     const article = createArticle(demo.content, demo.title);
     saveArticle(article);
-    // Best-effort cloud sync: the local demo article should still open immediately.
+    // Best-effort cloud sync for signed-in users: the local demo article should still open immediately.
     void uploadArticle(article).then((uploaded) => {
       if (!uploaded && currentUser) {
         toast({ title: t('demoArticleSyncPending'), duration: 2500 });

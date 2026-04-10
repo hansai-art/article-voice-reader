@@ -218,7 +218,7 @@ const translations = {
     homePlaybackResumeWorkaround: '{browser} 已啟用長文續播保護，較適合拿來播放長篇文章。',
     homePlaybackReady: '{browser} / {os} 已具備穩定的即時朗讀能力。',
     homeUpgradeCardTitle: '把體驗升級到付費級',
-    homeUpgradeCardHint: '把自然語音、MP3、同步與分享補齊，產品價值才會真正拉開。',
+    homeUpgradeCardHint: '把自然語音、MP3、同步與分享補齊，這些功能會明顯提升整體體驗。',
     homeUpgradeCta: '前往設定',
     homeUpgradeSummary: 'AI 摘要',
     homeUpgradeVoice: '自然語音與 MP3',
