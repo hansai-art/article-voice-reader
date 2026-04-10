@@ -45,8 +45,16 @@ async function callGemini(apiKey: string, prompt: string): Promise<SummaryResult
     throw new Error(`GEMINI_ERROR: ${response.status}`);
   }
 
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error('GEMINI_ERROR: Invalid JSON response');
+  }
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if (!text) {
+    throw new Error('GEMINI_ERROR: Empty response');
+  }
   return parseResponse(text);
 }
 
@@ -70,8 +78,16 @@ async function callOpenAI(apiKey: string, prompt: string): Promise<SummaryResult
     throw new Error(`OPENAI_ERROR: ${response.status}`);
   }
 
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error('OPENAI_ERROR: Invalid JSON response');
+  }
   const text = data.choices?.[0]?.message?.content || '';
+  if (!text) {
+    throw new Error('OPENAI_ERROR: Empty response');
+  }
   return parseResponse(text);
 }
 

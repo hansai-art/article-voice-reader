@@ -4,6 +4,7 @@ import { ThemeProvider } from "next-themes";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import HomePage from "./pages/HomePage";
 import AddArticlePage from "./pages/AddArticlePage";
 import PlayerPage from "./pages/PlayerPage";
@@ -32,6 +33,7 @@ function useAutoSyncOnStartup() {
 const App = () => {
   useAutoSyncOnStartup();
   return (
+  <ErrorBoundary>
   <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
     <TooltipProvider>
       <Toaster />
@@ -49,6 +51,7 @@ const App = () => {
       </BrowserRouter>
     </TooltipProvider>
   </ThemeProvider>
+  </ErrorBoundary>
 );
 
 };

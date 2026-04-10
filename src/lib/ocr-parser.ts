@@ -11,16 +11,33 @@ export async function parseImageOCR(
   file: File,
   onProgress?: (p: OcrProgress) => void
 ): Promise<string> {
-  const Tesseract = await import('tesseract.js');
-  const result = await Tesseract.recognize(file, 'chi_tra+eng', {
-    logger: (m: any) => {
-      if (onProgress && m.status && typeof m.progress === 'number') {
-        onProgress({ status: m.status, progress: m.progress });
-      }
-    },
-  });
+  let Tesseract;
+  try {
+    Tesseract = await import('tesseract.js');
+  } catch (err) {
+    throw new Error('OCR_LOAD_FAILED');
+  }
 
-  return result.data.text.trim();
+  try {
+    const result = await Tesseract.recognize(file, 'chi_tra+eng', {
+      logger: (m: any) => {
+        if (onProgress && m.status && typeof m.progress === 'number') {
+          onProgress({ status: m.status, progress: m.progress });
+        }
+      },
+    });
+
+    const text = result.data.text.trim();
+    if (!text) {
+      throw new Error('OCR_NO_TEXT');
+    }
+    return text;
+  } catch (err) {
+    if (err instanceof Error && (err.message === 'OCR_NO_TEXT' || err.message === 'OCR_LOAD_FAILED')) {
+      throw err;
+    }
+    throw new Error('OCR_RECOGNIZE_FAILED');
+  }
 }
 
 export function isImageFile(file: File): boolean {

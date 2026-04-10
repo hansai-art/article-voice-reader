@@ -63,6 +63,10 @@ export class WebSpeechTTS implements TTSEngine {
   private resumeInterval: ReturnType<typeof setInterval> | null = null;
   private watchdog: ReturnType<typeof setTimeout> | null = null;
   private intentionallyStopped = false;
+  private watchdogRetryCount = 0;
+  private lastEstimatedMs = 0;
+  private static readonly MAX_WATCHDOG_RETRIES = 2;
+  private static readonly WATCHDOG_BACKOFF_BASE_MS = 300;
 
   speak(
     text: string,
@@ -85,6 +89,7 @@ export class WebSpeechTTS implements TTSEngine {
     const cleanup = () => {
       this.stopResumeInterval();
       this.stopWatchdog();
+      this.watchdogRetryCount = 0;
     };
 
     utterance.onend = () => {
@@ -116,17 +121,33 @@ export class WebSpeechTTS implements TTSEngine {
     // Watchdog: if onend/onerror never fires, force retry
     // Estimate max duration: ~150ms per char at rate 1, min 8s, max 30s
     const estimatedMs = Math.min(30000, Math.max(8000, (text.length * 150) / rate));
+    this.lastEstimatedMs = estimatedMs;
     this.startWatchdog(estimatedMs, () => {
       if (this.intentionallyStopped) return;
-      console.warn(`[TTS Watchdog] Utterance stalled after ${estimatedMs}ms, forcing retry`);
-      diagLog('tts_watchdog', `Stall detected after ${estimatedMs}ms: "${text.slice(0, 50)}..."`, { textLength: text.length, rate });
+      // Limit watchdog retries to prevent infinite loops
+      if (this.watchdogRetryCount >= WebSpeechTTS.MAX_WATCHDOG_RETRIES) {
+        console.warn(`[TTS Watchdog] Max retries (${WebSpeechTTS.MAX_WATCHDOG_RETRIES}) reached, giving up`);
+        diagLog('tts_watchdog_exhausted', `Gave up after ${WebSpeechTTS.MAX_WATCHDOG_RETRIES} retries: "${text.slice(0, 50)}..."`, { textLength: text.length, rate });
+        this.synth.cancel();
+        this.watchdogRetryCount = 0;
+        if (onError) {
+          onError('watchdog_exhausted', `Utterance stalled repeatedly for "${text.slice(0, 50)}..."`);
+        } else {
+          onEnd();
+        }
+        return;
+      }
+      this.watchdogRetryCount++;
+      console.warn(`[TTS Watchdog] Utterance stalled after ${estimatedMs}ms, retry ${this.watchdogRetryCount}/${WebSpeechTTS.MAX_WATCHDOG_RETRIES}`);
+      diagLog('tts_watchdog', `Stall detected after ${estimatedMs}ms: "${text.slice(0, 50)}..."`, { textLength: text.length, rate, retry: this.watchdogRetryCount });
       this.synth.cancel();
-      // Re-speak the same text
+      // Re-speak the same text with exponential backoff
+      const backoff = this.watchdogRetryCount * WebSpeechTTS.WATCHDOG_BACKOFF_BASE_MS;
       setTimeout(() => {
         if (!this.intentionallyStopped) {
           this.speak(text, rate, voice, onEnd, onBoundary, onError);
         }
-      }, 200);
+      }, backoff);
     });
   }
 
@@ -134,6 +155,7 @@ export class WebSpeechTTS implements TTSEngine {
     this.intentionallyStopped = true;
     this.stopResumeInterval();
     this.stopWatchdog();
+    this.watchdogRetryCount = 0;
     this.synth.cancel();
     this.currentUtterance = null;
   }
@@ -147,9 +169,10 @@ export class WebSpeechTTS implements TTSEngine {
   resume() {
     this.synth.resume();
     this.startResumeInterval();
-    // Restart watchdog on resume
+    // Restart watchdog on resume using the original estimated duration (not a fixed 15s)
     if (this.currentUtterance) {
-      this.startWatchdog(15000, () => {
+      const timeout = Math.max(15000, this.lastEstimatedMs);
+      this.startWatchdog(timeout, () => {
         if (this.intentionallyStopped) return;
         console.warn('[TTS Watchdog] Stalled after resume, forcing next');
         this.synth.cancel();
