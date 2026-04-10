@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, Key, Cloud, Loader2, LogOut, UserPlus, ChevronDown, ChevronUp, User2, Copy, Check } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -10,6 +11,7 @@ import {
   getApiKey, setApiKey as saveApiKey,
   getApiProvider, setApiProvider as saveApiProvider,
   ApiProvider,
+  getArticles,
 } from '@/lib/storage';
 import {
   getSupabaseConfig, setSupabaseConfig,
@@ -23,7 +25,7 @@ import { getDiagSummary, getDiagData, clearDiagLogs } from '@/lib/diagnostics';
 
 const SettingsPage = () => {
   const navigate = useNavigate();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
 
   // AI settings
   const [apiKey, setApiKey] = useState(getApiKey());
@@ -50,6 +52,73 @@ const SettingsPage = () => {
   const [profileDisplayName, setProfileDisplayName] = useState('');
   const [profileLoading, setProfileLoading] = useState(false);
   const [urlCopied, setUrlCopied] = useState(false);
+  const diagData = getDiagData();
+  const diagSummary = getDiagSummary();
+  const articleCount = getArticles().length;
+  const hasApiKey = apiKey.trim().length > 0;
+  const playbackErrorCount = diagData.logs.filter((log) => log.type === 'tts_error' || log.type === 'tts_stall').length;
+
+  const upgradeItems = [
+    {
+      label: t('upgradePlaybackTitle'),
+      status: !diagData.device.speechSynthesis ? 'setup' : playbackErrorCount > 0 ? 'attention' : 'ready',
+      detail: !diagData.device.speechSynthesis
+        ? t('upgradePlaybackSetup')
+        : playbackErrorCount > 0
+          ? t('upgradePlaybackAttention')
+              .replace('{count}', String(playbackErrorCount))
+              .replace('{browser}', diagData.device.browser || 'Browser')
+          : t('upgradePlaybackReady')
+              .replace('{browser}', diagData.device.browser || 'Browser')
+              .replace('{os}', diagData.device.os || 'Device'),
+    },
+    {
+      label: t('upgradeAiTitle'),
+      status: !hasApiKey ? 'setup' : provider === 'openai' ? 'ready' : 'attention',
+      detail: !hasApiKey
+        ? t('upgradeAiSetup')
+        : provider === 'openai'
+          ? t('upgradeAiReady')
+          : t('upgradeAiAttention'),
+    },
+    {
+      label: t('upgradeSyncTitle'),
+      status: user ? 'ready' : 'setup',
+      detail: user
+        ? t('upgradeSyncReady')
+        : t('upgradeSyncSetup'),
+    },
+    {
+      label: t('upgradeLibraryTitle'),
+      status: articleCount > 0 ? 'ready' : 'setup',
+      detail: articleCount > 0
+        ? t('upgradeLibraryReady').replace('{count}', String(articleCount))
+        : t('upgradeLibrarySetup'),
+    },
+  ] as const;
+
+  const readinessScore = Math.round(
+    upgradeItems.reduce((sum, item) => sum + (item.status === 'ready' ? 25 : item.status === 'attention' ? 15 : 0), 0)
+  );
+
+  const nextActions = [
+    articleCount === 0 ? t('upgradeActionAddFirstArticle') : null,
+    !hasApiKey ? t('upgradeActionAddApiKey') : provider !== 'openai' ? t('upgradeActionSwitchToOpenai') : null,
+    !user ? t('upgradeActionCreateAccount') : null,
+    playbackErrorCount > 0 ? t('upgradeActionReviewDiagnostics') : null,
+  ].filter(Boolean) as string[];
+
+  const statusBadgeVariant = {
+    ready: 'default',
+    attention: 'secondary',
+    setup: 'outline',
+  } as const;
+
+  const statusLabel = {
+    ready: t('upgradeStatusReady'),
+    attention: t('upgradeStatusAttention'),
+    setup: t('upgradeStatusSetup'),
+  } as const;
 
   useEffect(() => {
     if (isSupabaseConfigured()) {
@@ -215,6 +284,45 @@ const SettingsPage = () => {
 
       <main className="max-w-lg mx-auto px-6 mt-6 space-y-6 pb-8">
         {/* Account & Sync — TOP SECTION */}
+        <Card className="p-5 space-y-4 border-primary/20 bg-primary/5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="font-semibold">{t('upgradeChecklistTitle')}</h2>
+              <p className="text-sm text-muted-foreground">{t('upgradeChecklistHint')}</p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-2xl font-bold">{readinessScore}</p>
+              <p className="text-xs text-muted-foreground">{t('upgradeScoreLabel')}</p>
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            {upgradeItems.map((item) => (
+              <div key={item.label} className="rounded-xl border bg-background/90 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">{item.label}</p>
+                  <Badge variant={statusBadgeVariant[item.status]}>{statusLabel[item.status]}</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">{item.detail}</p>
+              </div>
+            ))}
+          </div>
+
+          {nextActions.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{t('upgradeNextActionsTitle')}</p>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                {nextActions.map((action) => (
+                  <li key={action} className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">•</span>
+                    <span>{action}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+
         <Card className="p-5 space-y-4">
           <div className="flex items-center gap-2">
             <Cloud className="h-5 w-5 text-primary" />
@@ -454,7 +562,7 @@ const SettingsPage = () => {
         <Card className="p-5 space-y-3">
           <h2 className="font-semibold text-muted-foreground">{lang === 'zh-TW' ? '裝置診斷' : 'Device Diagnostics'}</h2>
           <pre className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 whitespace-pre-wrap font-mono">
-            {getDiagSummary()}
+            {diagSummary}
           </pre>
           <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => {
             const data = getDiagData();
