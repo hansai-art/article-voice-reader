@@ -27,6 +27,12 @@ export function OnboardingTour({ onComplete, onTryDemo }: { onComplete: () => vo
     onComplete();
   };
 
+  const finishAndTryDemo = () => {
+    localStorage.setItem(ONBOARDING_KEY, 'true');
+    onTryDemo?.();
+    onComplete();
+  };
+
   const current = steps[step];
   const Icon = current.icon;
   const isLast = step === steps.length - 1;
@@ -93,7 +99,7 @@ export function OnboardingTour({ onComplete, onTryDemo }: { onComplete: () => vo
             {isLast ? (
               <div className="flex items-center gap-2">
                 {onTryDemo && (
-                  <Button size="sm" variant="outline" onClick={() => { finish(); onTryDemo(); }} className="gap-1 h-8">
+                  <Button size="sm" variant="outline" onClick={finishAndTryDemo} className="gap-1 h-8">
                     {t('onboardingTryDemo')}
                   </Button>
                 )}

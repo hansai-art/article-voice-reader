@@ -105,6 +105,7 @@ const HomePage = () => {
     const demo = getDemoArticle(lang);
     const article = createArticle(demo.content, demo.title);
     saveArticle(article);
+    // Best-effort cloud sync: the local demo article should still open immediately.
     void uploadArticle(article).then((uploaded) => {
       if (!uploaded && currentUser) {
         toast({ title: t('demoArticleSyncPending'), duration: 2500 });
@@ -226,6 +227,11 @@ const HomePage = () => {
     : playbackStatus === 'attention'
       ? t('upgradeStatusAttention')
       : t('upgradeStatusSetup');
+  const playbackStatusVariant = {
+    ready: 'default',
+    attention: 'secondary',
+    setup: 'outline',
+  } as const;
   const playbackMessage = !diagData.device.speechSynthesis
     ? t('homePlaybackSetup')
     : playbackErrorCount > 0
@@ -311,7 +317,7 @@ const HomePage = () => {
               </p>
               <p className="text-xs text-muted-foreground">{t('homePlaybackCardHint')}</p>
             </div>
-            <Badge variant={playbackStatus === 'ready' ? 'default' : playbackStatus === 'attention' ? 'secondary' : 'outline'}>
+            <Badge variant={playbackStatusVariant[playbackStatus]}>
               {playbackStatusLabel}
             </Badge>
           </div>
