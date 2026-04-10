@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, Key, Cloud, Loader2, LogOut, UserPlus, ChevronDown, ChevronUp, User2, Copy, Check } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,10 @@ import { syncArticles } from '@/lib/sync';
 import { toast } from '@/hooks/use-toast';
 import type { User } from '@supabase/supabase-js';
 import { getDiagSummary, getDiagData, clearDiagLogs } from '@/lib/diagnostics';
+
+const READY_POINTS = 25;
+const ATTENTION_POINTS = 15;
+const SETUP_POINTS = 0;
 
 const SettingsPage = () => {
   const navigate = useNavigate();
@@ -52,13 +56,18 @@ const SettingsPage = () => {
   const [profileDisplayName, setProfileDisplayName] = useState('');
   const [profileLoading, setProfileLoading] = useState(false);
   const [urlCopied, setUrlCopied] = useState(false);
-  const diagData = getDiagData();
-  const diagSummary = getDiagSummary();
-  const articleCount = getArticles().length;
+  const [diagRefreshKey, setDiagRefreshKey] = useState(0);
+  const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
+  const [diagData, setDiagData] = useState(() => getDiagData());
+  const [diagSummary, setDiagSummary] = useState(() => getDiagSummary());
+  const [articleCount, setArticleCount] = useState(() => getArticles().length);
   const hasApiKey = apiKey.trim().length > 0;
-  const playbackErrorCount = diagData.logs.filter((log) => log.type === 'tts_error' || log.type === 'tts_stall').length;
+  const playbackErrorCount = useMemo(
+    () => diagData.logs.filter((log) => log.type === 'tts_error' || log.type === 'tts_stall').length,
+    [diagData.logs]
+  );
 
-  const upgradeItems = [
+  const upgradeItems = useMemo(() => [
     {
       label: t('upgradePlaybackTitle'),
       status: !diagData.device.speechSynthesis ? 'setup' : playbackErrorCount > 0 ? 'attention' : 'ready',
@@ -95,18 +104,23 @@ const SettingsPage = () => {
         ? t('upgradeLibraryReady').replace('{count}', String(articleCount))
         : t('upgradeLibrarySetup'),
     },
-  ] as const;
+  ] as const, [articleCount, diagData.device.browser, diagData.device.os, diagData.device.speechSynthesis, playbackErrorCount, provider, t, user, hasApiKey]);
 
-  const readinessScore = Math.round(
-    upgradeItems.reduce((sum, item) => sum + (item.status === 'ready' ? 25 : item.status === 'attention' ? 15 : 0), 0)
+  const readinessScore = useMemo(
+    () => Math.round(
+      upgradeItems.reduce((sum, item) => sum + (
+        item.status === 'ready' ? READY_POINTS : item.status === 'attention' ? ATTENTION_POINTS : SETUP_POINTS
+      ), 0)
+    ),
+    [upgradeItems]
   );
 
-  const nextActions = [
+  const nextActions = useMemo(() => [
     articleCount === 0 ? t('upgradeActionAddFirstArticle') : null,
     !hasApiKey ? t('upgradeActionAddApiKey') : provider !== 'openai' ? t('upgradeActionSwitchToOpenai') : null,
     !user ? t('upgradeActionCreateAccount') : null,
     playbackErrorCount > 0 ? t('upgradeActionReviewDiagnostics') : null,
-  ].filter(Boolean) as string[];
+  ].filter(Boolean) as string[], [articleCount, hasApiKey, playbackErrorCount, provider, t, user]);
 
   const statusBadgeVariant = {
     ready: 'default',
@@ -136,6 +150,15 @@ const SettingsPage = () => {
     }
   }, []);
 
+  useEffect(() => {
+    setDiagData(getDiagData());
+    setDiagSummary(getDiagSummary());
+  }, [diagRefreshKey]);
+
+  useEffect(() => {
+    setArticleCount(getArticles().length);
+  }, [libraryRefreshKey]);
+
   const handleSaveApiKey = () => {
     saveApiKey(apiKey.trim());
     saveApiProvider(provider);
@@ -151,6 +174,7 @@ const SettingsPage = () => {
     setSyncLoading(true);
     try {
       const result = await syncArticles();
+      setLibraryRefreshKey((current) => current + 1);
       toast({
         title: t('syncSuccess')
           .replace('{up}', String(result.uploaded))
@@ -201,6 +225,7 @@ const SettingsPage = () => {
         // Auto-sync after registration
         try {
           const result = await syncArticles();
+          setLibraryRefreshKey((current) => current + 1);
           toast({
             title: t('syncSuccess')
               .replace('{up}', String(result.uploaded))
@@ -218,6 +243,7 @@ const SettingsPage = () => {
         toast({ title: t('loginSuccess') });
         try {
           const result = await syncArticles();
+          setLibraryRefreshKey((current) => current + 1);
           toast({
             title: t('syncSuccess')
               .replace('{up}', String(result.uploaded))
@@ -243,11 +269,12 @@ const SettingsPage = () => {
       setUser(u);
       toast({ title: t('loginSuccess') });
       // Auto-sync after login
-      try {
-        const result = await syncArticles();
-        toast({
-          title: t('syncSuccess')
-            .replace('{up}', String(result.uploaded))
+       try {
+         const result = await syncArticles();
+         setLibraryRefreshKey((current) => current + 1);
+         toast({
+           title: t('syncSuccess')
+             .replace('{up}', String(result.uploaded))
             .replace('{down}', String(result.downloaded)),
         });
       } catch {
@@ -574,6 +601,7 @@ const SettingsPage = () => {
           </Button>
           <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground" onClick={() => {
             clearDiagLogs();
+            setDiagRefreshKey((current) => current + 1);
             toast({ title: lang === 'zh-TW' ? '已清除記錄' : 'Logs cleared', duration: 1500 });
           }}>
             {lang === 'zh-TW' ? '清除記錄' : 'Clear Logs'}
