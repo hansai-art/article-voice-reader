@@ -18,7 +18,7 @@ export function shouldShowOnboarding(): boolean {
   return !localStorage.getItem(ONBOARDING_KEY);
 }
 
-export function OnboardingTour({ onComplete }: { onComplete: () => void }) {
+export function OnboardingTour({ onComplete, onTryDemo }: { onComplete: () => void; onTryDemo?: () => void }) {
   const [step, setStep] = useState(0);
   const { t } = useLanguage();
 
@@ -91,9 +91,16 @@ export function OnboardingTour({ onComplete }: { onComplete: () => void }) {
               </Button>
             )}
             {isLast ? (
-              <Button size="sm" onClick={finish} className="gap-1 px-5 h-8">
-                {t('onboardingDone')}
-              </Button>
+              <div className="flex items-center gap-2">
+                {onTryDemo && (
+                  <Button size="sm" variant="outline" onClick={() => { finish(); onTryDemo(); }} className="gap-1 h-8">
+                    {t('onboardingTryDemo')}
+                  </Button>
+                )}
+                <Button size="sm" onClick={finish} className="gap-1 px-5 h-8">
+                  {t('onboardingDone')}
+                </Button>
+              </div>
             ) : (
               <Button size="sm" onClick={() => setStep(step + 1)} className="gap-1 h-8">
                 {t('onboardingNext')}

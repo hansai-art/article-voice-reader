@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Globe, Trash2, BookOpen, Sun, Moon, Download, Upload, Settings, Search, ArrowUpDown, BarChart3, Play, Eye, EyeOff } from 'lucide-react';
+import { Plus, Globe, Trash2, BookOpen, Sun, Moon, Download, Upload, Settings, Search, ArrowUpDown, BarChart3, Play, Eye, EyeOff, Sparkles, AudioLines, Bot, Cloud, ArrowRight } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,16 +20,44 @@ import {
 import {
   getArticles, deleteArticle, getLastPlayedId, getArticle,
   exportArticles, importArticles, Article, getReadingStats,
+  createArticle, saveArticle, getApiKey, getApiProvider,
 } from '@/lib/storage';
 import { useLanguage } from '@/hooks/useLanguage';
 import { formatTimeAgo } from '@/lib/i18n';
 import { toast } from '@/hooks/use-toast';
 import { getUser, toggleArticlePublic } from '@/lib/supabase';
-import { deleteArticleRemote } from '@/lib/auto-sync';
+import { deleteArticleRemote, uploadArticle } from '@/lib/auto-sync';
 import { OnboardingTour, shouldShowOnboarding } from '@/components/OnboardingTour';
+import { getDiagData, getTTSLimits } from '@/lib/diagnostics';
 import type { User } from '@supabase/supabase-js';
 
 type SortMode = 'recent' | 'created' | 'progress' | 'title';
+
+function getDemoArticle(lang: 'zh-TW' | 'en') {
+  if (lang === 'zh-TW') {
+    return {
+      title: '3 分鐘體驗語音朗讀器',
+      content: `歡迎體驗語音朗讀器。
+
+這是一篇示範文章，會帶你快速感受貼上文章、開始播放、切換語音與續聽的完整流程。
+
+你可以試著播放幾句，接著切換語速、開啟摘要，或稍後回到首頁再從上次進度繼續。
+
+如果這個流程順利，下一步就很適合匯入你自己的文章，或到設定頁解鎖 AI 語音、MP3 匯出與雲端同步。`,
+    };
+  }
+
+  return {
+    title: '3-Minute Voice Reader Demo',
+    content: `Welcome to Voice Reader.
+
+This sample article helps you experience the full flow quickly: import, play, switch voices, and resume later.
+
+Try listening for a few sentences, then adjust speed, generate a summary, or return to the home screen and continue from where you left off.
+
+If this feels smooth, the next step is to import your own article or unlock AI voices, MP3 export, and sync in Settings.`,
+  };
+}
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -45,6 +74,14 @@ const HomePage = () => {
   const [articlePublicMap, setArticlePublicMap] = useState<Record<string, boolean>>({});
   const [showOnboarding, setShowOnboarding] = useState(shouldShowOnboarding);
   const importRef = useRef<HTMLInputElement>(null);
+  const diagData = useMemo(() => getDiagData(), []);
+  const ttsLimits = useMemo(() => getTTSLimits(diagData.device), [diagData.device]);
+  const playbackErrorCount = useMemo(
+    () => diagData.logs.filter((log) => log.type === 'tts_error' || log.type === 'tts_stall').length,
+    [diagData.logs]
+  );
+  const aiConfigured = getApiKey().trim().length > 0;
+  const openaiConfigured = aiConfigured && getApiProvider() === 'openai';
 
   useEffect(() => {
     setArticles(getArticles());
@@ -62,6 +99,17 @@ const HomePage = () => {
     setArticles(getArticles());
     if (lastPlayedArticle?.id === id) setLastPlayedArticle(null);
     setDeleteTarget(null);
+  };
+
+  const handleTryDemo = () => {
+    const demo = getDemoArticle(lang);
+    const article = createArticle(demo.content, demo.title);
+    saveArticle(article);
+    uploadArticle(article);
+    setArticles(getArticles());
+    setLastPlayedArticle(article);
+    toast({ title: t('demoArticleCreated'), duration: 2000 });
+    navigate(`/player/${article.id}`);
   };
 
   const handleTogglePublic = async (articleId: string) => {
@@ -154,7 +202,7 @@ const HomePage = () => {
         default: return 0;
       }
     });
-  }, [articles, searchQuery, sortMode]);
+  }, [articles, searchQuery, sortMode, selectedTag]);
 
   // Reading stats
   const stats = getReadingStats();
@@ -164,6 +212,30 @@ const HomePage = () => {
     progress: lang === 'zh-TW' ? '進度' : 'Progress',
     title: lang === 'zh-TW' ? '標題' : 'Title',
   };
+  const playbackStatus = !diagData.device.speechSynthesis
+    ? 'setup'
+    : playbackErrorCount > 0 || ttsLimits.needsUserGesture
+      ? 'attention'
+      : 'ready';
+  const playbackStatusLabel = playbackStatus === 'ready'
+    ? t('upgradeStatusReady')
+    : playbackStatus === 'attention'
+      ? t('upgradeStatusAttention')
+      : t('upgradeStatusSetup');
+  const playbackMessage = !diagData.device.speechSynthesis
+    ? t('homePlaybackSetup')
+    : playbackErrorCount > 0
+      ? t('homePlaybackErrors')
+          .replace('{count}', String(playbackErrorCount))
+          .replace('{browser}', diagData.device.browser || 'Browser')
+      : ttsLimits.needsUserGesture
+        ? t('homePlaybackGesture')
+        : ttsLimits.resumeWorkaround
+          ? t('homePlaybackResumeWorkaround')
+              .replace('{browser}', diagData.device.browser || 'Browser')
+          : t('homePlaybackReady')
+              .replace('{browser}', diagData.device.browser || 'Browser')
+              .replace('{os}', diagData.device.os || 'Device');
 
   return (
     <div className={`min-h-screen ${lastPlayedArticle ? 'pb-20' : 'pb-6'}`}>
@@ -203,6 +275,73 @@ const HomePage = () => {
           </Button>
           <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
         </div>
+
+        {articles.length === 0 && (
+          <Card className="p-5 border-primary/20 bg-primary/5 space-y-4">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                {t('quickStartTitle')}
+              </p>
+              <p className="text-sm text-muted-foreground">{t('quickStartDesc')}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button className="gap-2" onClick={handleTryDemo}>
+                <Play className="h-4 w-4" />
+                {t('tryDemoArticle')}
+              </Button>
+              <Button variant="outline" className="gap-2" onClick={() => navigate('/add')}>
+                <Plus className="h-4 w-4" />
+                {t('importOwnArticle')}
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        <Card className="p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold flex items-center gap-2">
+                <AudioLines className="h-4 w-4 text-primary" />
+                {t('homePlaybackCardTitle')}
+              </p>
+              <p className="text-xs text-muted-foreground">{t('homePlaybackCardHint')}</p>
+            </div>
+            <Badge variant={playbackStatus === 'ready' ? 'default' : playbackStatus === 'attention' ? 'secondary' : 'outline'}>
+              {playbackStatusLabel}
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground leading-relaxed">{playbackMessage}</p>
+        </Card>
+
+        {(!openaiConfigured || !currentUser) && (
+          <Card className="p-4 space-y-3 border-accent/30 bg-accent/5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold">{t('homeUpgradeCardTitle')}</p>
+                <p className="text-xs text-muted-foreground">{t('homeUpgradeCardHint')}</p>
+              </div>
+              <Button variant="outline" size="sm" className="shrink-0 gap-1" onClick={() => navigate('/settings')}>
+                {t('homeUpgradeCta')}
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" />{t('homeUpgradeSummary')}</span>
+                <Badge variant={aiConfigured ? 'default' : 'outline'}>{aiConfigured ? t('upgradeStatusReady') : t('upgradeStatusSetup')}</Badge>
+              </div>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="flex items-center gap-2"><Bot className="h-4 w-4 text-primary" />{t('homeUpgradeVoice')}</span>
+                <Badge variant={openaiConfigured ? 'default' : 'outline'}>{openaiConfigured ? t('upgradeStatusReady') : t('upgradeStatusSetup')}</Badge>
+              </div>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="flex items-center gap-2"><Cloud className="h-4 w-4 text-primary" />{t('homeUpgradeSync')}</span>
+                <Badge variant={currentUser ? 'default' : 'outline'}>{currentUser ? t('upgradeStatusReady') : t('upgradeStatusSetup')}</Badge>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Reading stats banner */}
         {articles.length > 0 && (
@@ -401,7 +540,7 @@ const HomePage = () => {
       )}
 
       {/* Onboarding tour */}
-      {showOnboarding && <OnboardingTour onComplete={() => setShowOnboarding(false)} />}
+      {showOnboarding && <OnboardingTour onComplete={() => setShowOnboarding(false)} onTryDemo={handleTryDemo} />}
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
