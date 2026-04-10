@@ -104,7 +104,7 @@ const SettingsPage = () => {
         ? t('upgradeLibraryReady').replace('{count}', String(articleCount))
         : t('upgradeLibrarySetup'),
     },
-  ] as const, [articleCount, diagData.device.browser, diagData.device.os, diagData.device.speechSynthesis, playbackErrorCount, provider, t, user, hasApiKey]);
+  ] as const, [articleCount, diagData, playbackErrorCount, provider, t, user, hasApiKey]);
 
   const readinessScore = useMemo(
     () => Math.round(
@@ -133,6 +133,8 @@ const SettingsPage = () => {
     attention: t('upgradeStatusAttention'),
     setup: t('upgradeStatusSetup'),
   } as const;
+
+  const refreshLibrary = () => setLibraryRefreshKey((current) => current + 1);
 
   useEffect(() => {
     if (isSupabaseConfigured()) {
@@ -174,7 +176,7 @@ const SettingsPage = () => {
     setSyncLoading(true);
     try {
       const result = await syncArticles();
-      setLibraryRefreshKey((current) => current + 1);
+      refreshLibrary();
       toast({
         title: t('syncSuccess')
           .replace('{up}', String(result.uploaded))
@@ -225,7 +227,7 @@ const SettingsPage = () => {
         // Auto-sync after registration
         try {
           const result = await syncArticles();
-          setLibraryRefreshKey((current) => current + 1);
+          refreshLibrary();
           toast({
             title: t('syncSuccess')
               .replace('{up}', String(result.uploaded))
@@ -243,7 +245,7 @@ const SettingsPage = () => {
         toast({ title: t('loginSuccess') });
         try {
           const result = await syncArticles();
-          setLibraryRefreshKey((current) => current + 1);
+          refreshLibrary();
           toast({
             title: t('syncSuccess')
               .replace('{up}', String(result.uploaded))
@@ -271,7 +273,7 @@ const SettingsPage = () => {
       // Auto-sync after login
        try {
          const result = await syncArticles();
-         setLibraryRefreshKey((current) => current + 1);
+         refreshLibrary();
          toast({
            title: t('syncSuccess')
              .replace('{up}', String(result.uploaded))
