@@ -161,14 +161,15 @@ const PlayerPage = () => {
       navigator.mediaSession.setActionHandler('pause', () => togglePlay());
       navigator.mediaSession.setActionHandler('previoustrack', () => skipBackward());
       navigator.mediaSession.setActionHandler('nexttrack', () => skipForward());
-    } catch {
+    } catch (error) {
+      console.warn('[MediaSession] Failed to register handlers', error);
       return;
     }
     return () => {
       try {
         MEDIA_SESSION_ACTIONS.forEach((action) => navigator.mediaSession.setActionHandler(action, null));
-      } catch {
-        // Ignore unsupported media session cleanup handlers.
+      } catch (error) {
+        console.warn('[MediaSession] Failed to clear handlers', error);
       }
     };
   }, [article, togglePlay, skipForward, skipBackward]);

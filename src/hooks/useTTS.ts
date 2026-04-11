@@ -54,6 +54,7 @@ export function useTTS(article: Article | null) {
   const engineTypeRef = useRef(engineType);
   const paragraphIndexRef = useRef(0);
   const sentenceIndexRef = useRef(0);
+  const speakSentenceRef = useRef<(pIdx: number, sIdx: number) => void>(() => {});
 
   // Device-aware TTS limits
   const deviceRef = useRef(detectDevice());
@@ -292,6 +293,10 @@ export function useTTS(article: Article | null) {
     [speed, selectedVoice, saveProgress, getEngine, prefetchNext]
   );
 
+  useEffect(() => {
+    speakSentenceRef.current = speakSentence;
+  }, [speakSentence]);
+
   /**
    * Normalizes playback startup for both fresh play and sentence replay.
    * `restartTimer` is true for a brand-new play request, but false when replaying
@@ -491,10 +496,10 @@ export function useTTS(article: Article | null) {
 
     setTimeout(() => {
       if (playingRef.current) {
-        speakSentence(currentParagraphIndex, currentSentenceIndex);
+        speakSentenceRef.current(currentParagraphIndex, currentSentenceIndex);
       }
     }, 100);
-  }, [selectedVoice, getEngine, speakSentence]);
+  }, [selectedVoice, getEngine]);
 
   // Cleanup
   useEffect(() => {
