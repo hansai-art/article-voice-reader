@@ -127,7 +127,11 @@ export function detectDevice(): DeviceInfo {
       audioContext = true;
       // AudioContext close can fail on some browsers during capability probing; safe to ignore here
       // because this is not an active playback session.
-      void ctx.close().catch(() => {});
+      try {
+        void ctx.close().catch(() => {});
+      } catch {
+        // Ignore close failures during diagnostics probing.
+      }
     }
   } catch { /* */ }
 
