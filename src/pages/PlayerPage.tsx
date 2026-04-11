@@ -354,7 +354,7 @@ const PlayerPage = () => {
         return t('playerHealthLogError');
     }
   };
-  const playbackLogLocale = lang === 'zh-TW' ? 'zh-TW' : 'en-US';
+  const playbackLogLocale = useMemo(() => (lang === 'zh-TW' ? 'zh-TW' : 'en-US'), [lang]);
   const formatPlaybackLogTime = useCallback((ts: number) => new Date(ts).toLocaleTimeString(
     playbackLogLocale,
     { hour: '2-digit', minute: '2-digit' }

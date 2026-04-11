@@ -124,6 +124,7 @@ const HomePage = () => {
       }
     };
     void syncDemoArticle();
+    // Keep local navigation instant even if the background sync still needs to retry later.
     setArticles(getArticles());
     setLastPlayedArticle(article);
     toast({ title: t('demoArticleCreated'), duration: 2000 });

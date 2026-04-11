@@ -125,7 +125,8 @@ export function detectDevice(): DeviceInfo {
     if (AudioContextCtor) {
       const ctx = new AudioContextCtor();
       audioContext = true;
-      // AudioContext close can fail on some browsers during capability probing; safe to ignore here.
+      // AudioContext close can fail on some browsers during capability probing; safe to ignore here
+      // because this is not an active playback session.
       void ctx.close().catch(() => {});
     }
   } catch { /* */ }
