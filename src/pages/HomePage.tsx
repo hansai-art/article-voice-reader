@@ -117,8 +117,9 @@ const HomePage = () => {
     saveArticle(article);
     // Best-effort cloud sync for signed-in users: the local demo article should still open immediately.
     const syncDemoArticle = async () => {
+      if (!currentUser) return;
       const uploaded = await uploadArticle(article);
-      if (!uploaded && currentUser) {
+      if (!uploaded) {
         toast({ title: t('demoArticleSyncPending'), duration: 2500 });
       }
     };
