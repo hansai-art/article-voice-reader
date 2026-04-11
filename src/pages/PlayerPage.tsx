@@ -169,7 +169,7 @@ const PlayerPage = () => {
       try {
         MEDIA_SESSION_ACTIONS.forEach((action) => navigator.mediaSession.setActionHandler(action, null));
       } catch (error) {
-        console.warn('[MediaSession] Failed to clear handlers', error);
+        console.warn('[MediaSession] Failed to clear handlers during cleanup', error);
       }
     };
   }, [article, togglePlay, skipForward, skipBackward]);

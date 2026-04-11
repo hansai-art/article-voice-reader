@@ -14,6 +14,7 @@ import { uploadProgressDebounced } from '@/lib/auto-sync';
 import { detectDevice, getTTSLimits, diagLog } from '@/lib/diagnostics';
 
 const MAX_RETRIES = 2;
+const VOICE_CHANGE_DELAY_MS = 100;
 
 /** Filter to zh + en only, sort: zh-TW first, then other zh, then en */
 function filterAndSortVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice[] {
@@ -494,11 +495,13 @@ export function useTTS(article: Article | null) {
     const currentParagraphIndex = paragraphIndexRef.current;
     const currentSentenceIndex = sentenceIndexRef.current;
 
+    // Give the previous utterance a brief moment to fully stop before replaying
+    // with the newly selected voice.
     setTimeout(() => {
       if (playingRef.current) {
         speakSentenceRef.current(currentParagraphIndex, currentSentenceIndex);
       }
-    }, 100);
+    }, VOICE_CHANGE_DELAY_MS);
   }, [selectedVoice, getEngine]);
 
   // Cleanup
