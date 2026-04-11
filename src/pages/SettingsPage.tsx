@@ -34,7 +34,7 @@ const STATUS_POINTS = {
 
 const SettingsPage = () => {
   const navigate = useNavigate();
-  const { t, lang } = useLanguage();
+  const { t } = useLanguage();
 
   // AI settings
   const [apiKey, setApiKey] = useState(getApiKey());
@@ -595,24 +595,24 @@ const SettingsPage = () => {
 
         {/* Diagnostics */}
         <Card className="p-5 space-y-3">
-          <h2 className="font-semibold text-muted-foreground">{lang === 'zh-TW' ? '裝置診斷' : 'Device Diagnostics'}</h2>
+          <h2 className="font-semibold text-muted-foreground">{t('diagnosticsTitle')}</h2>
           <pre className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 whitespace-pre-wrap font-mono">
             {diagSummary}
           </pre>
           <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => {
             const data = getDiagData();
             const recent = data.logs.slice(-20).reverse();
-            const text = recent.map((l) => `[${new Date(l.ts).toLocaleTimeString()}] ${l.type}: ${l.message}`).join('\n') || (lang === 'zh-TW' ? '（無錯誤記錄）' : '(No error logs)');
-            toast({ title: lang === 'zh-TW' ? '最近 20 筆記錄' : 'Last 20 logs', description: text, duration: 15000 });
+            const text = recent.map((l) => `[${new Date(l.ts).toLocaleTimeString()}] ${l.type}: ${l.message}`).join('\n') || t('diagnosticsNoLogs');
+            toast({ title: t('diagnosticsRecentLogs'), description: text, duration: 15000 });
           }}>
-            {lang === 'zh-TW' ? '查看錯誤記錄' : 'View Error Logs'}
+            {t('diagnosticsViewLogs')}
           </Button>
           <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground" onClick={() => {
             clearDiagLogs();
             setDiagRefreshKey((current) => current + 1);
-            toast({ title: lang === 'zh-TW' ? '已清除記錄' : 'Logs cleared', duration: 1500 });
+            toast({ title: t('diagnosticsLogsCleared'), duration: 1500 });
           }}>
-            {lang === 'zh-TW' ? '清除記錄' : 'Clear Logs'}
+            {t('playerHealthClearLogs')}
           </Button>
         </Card>
       </main>
