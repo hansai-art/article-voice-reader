@@ -274,6 +274,17 @@ export function useTTS(article: Article | null) {
     [speed, selectedVoice, saveProgress, getEngine, prefetchNext]
   );
 
+  const startPlaybackSession = useCallback((restartTimer = false) => {
+    retryCountRef.current = 0;
+    if (!playingRef.current) {
+      setIsPlaying(true);
+      playingRef.current = true;
+    }
+    if (restartTimer || playStartTimeRef.current === 0) {
+      playStartTimeRef.current = Date.now();
+    }
+  }, []);
+
   const play = useCallback(() => {
     startPlaybackSession(true);
     speakSentence(paragraphIndex, sentenceIndex);
@@ -297,21 +308,9 @@ export function useTTS(article: Article | null) {
     else play();
   }, [isPlaying, play, pause]);
 
-  const startPlaybackSession = useCallback((restartTimer = false) => {
-    retryCountRef.current = 0;
-    if (!playingRef.current) {
-      setIsPlaying(true);
-      playingRef.current = true;
-    }
-    if (restartTimer || playStartTimeRef.current === 0) {
-      playStartTimeRef.current = Date.now();
-    }
-  }, []);
-
   const replayCurrentSentence = useCallback(() => {
     getEngine().stop();
     startPlaybackSession();
-    setSentenceIndex(sentenceIndex);
     saveProgress(paragraphIndex, sentenceIndex);
     speakSentence(paragraphIndex, sentenceIndex);
   }, [paragraphIndex, sentenceIndex, saveProgress, speakSentence, getEngine, startPlaybackSession]);
