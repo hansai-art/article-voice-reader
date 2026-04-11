@@ -327,11 +327,11 @@ export class OpenAITTS implements TTSEngine {
       };
 
       await this.audio.play();
-    } catch (err: any) {
-      if (err?.name === 'AbortError') return; // intentional stop
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') return; // intentional stop
       this.cleanup();
       this.speaking = false;
-      const msg = err?.message || 'Unknown error';
+      const msg = err instanceof Error ? err.message : 'Unknown error';
       if (onError) onError('openai_tts_error', msg);
       else onEnd();
     }
@@ -442,12 +442,12 @@ export function cleanText(text: string): string {
     // Remove common web UI patterns
     if (/^(share|分享|tweet|like|讚|留言|comment|reply|回覆|subscribe|訂閱|follow|追蹤|more|更多|menu|選單|home|首頁|search|搜尋|login|登入|sign up|註冊|advertisement|廣告|ad|loading|載入中|read more|繼續閱讀|click here|點此|download|下載|print|列印|copy|複製|previous|上一篇|next|下一篇|related|相關)$/i.test(line)) return false;
     // Remove lines that look like breadcrumbs (Home > Category > ...)
-    if (/^[\w\u4e00-\u9fff]+(\s*[>›»\/]\s*[\w\u4e00-\u9fff]+){2,}$/.test(line)) return false;
+    if (/^[\w\u4e00-\u9fff]+(\s*[>›»/]\s*[\w\u4e00-\u9fff]+){2,}$/.test(line)) return false;
     return true;
   });
 
   // Collapse 3+ consecutive empty lines into 2 (one blank line between paragraphs)
-  let result: string[] = [];
+  const result: string[] = [];
   let emptyCount = 0;
   for (const line of lines) {
     if (line === '') {

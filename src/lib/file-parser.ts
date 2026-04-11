@@ -1,4 +1,5 @@
 import { toast } from '@/hooks/use-toast';
+import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import { t } from './i18n';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -40,7 +41,7 @@ async function parsePDF(file: File): Promise<string> {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     const pageText = content.items
-      .map((item: any) => item.str)
+      .map((item) => ('str' in item ? (item as TextItem).str : ''))
       .join('');
     texts.push(pageText);
   }

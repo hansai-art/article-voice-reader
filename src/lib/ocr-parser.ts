@@ -1,3 +1,5 @@
+type TesseractModule = typeof import('tesseract.js');
+
 export interface OcrProgress {
   status: string;
   progress: number;
@@ -11,7 +13,7 @@ export async function parseImageOCR(
   file: File,
   onProgress?: (p: OcrProgress) => void
 ): Promise<string> {
-  let Tesseract;
+  let Tesseract: TesseractModule;
   try {
     Tesseract = await import('tesseract.js');
   } catch (err) {
@@ -20,7 +22,7 @@ export async function parseImageOCR(
 
   try {
     const result = await Tesseract.recognize(file, 'chi_tra+eng', {
-      logger: (m: any) => {
+      logger: (m: OcrProgress) => {
         if (onProgress && m.status && typeof m.progress === 'number') {
           onProgress({ status: m.status, progress: m.progress });
         }
