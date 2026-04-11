@@ -112,6 +112,7 @@ export function setReadingTheme(theme: ReadingTheme) {
 }
 
 // API key is intentionally kept in memory only to avoid clear-text browser storage.
+// This reduces persistence risk, but any in-browser key still depends on preventing XSS.
 let sessionApiKey = '';
 const API_PROVIDER_KEY = 'article-reader-api-provider';
 
