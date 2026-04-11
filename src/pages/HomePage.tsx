@@ -116,11 +116,13 @@ const HomePage = () => {
     const article = createArticle(demo.content, demo.title);
     saveArticle(article);
     // Best-effort cloud sync for signed-in users: the local demo article should still open immediately.
-    void uploadArticle(article).then((uploaded) => {
+    const syncDemoArticle = async () => {
+      const uploaded = await uploadArticle(article);
       if (!uploaded && currentUser) {
         toast({ title: t('demoArticleSyncPending'), duration: 2500 });
       }
-    });
+    };
+    void syncDemoArticle();
     setArticles(getArticles());
     setLastPlayedArticle(article);
     toast({ title: t('demoArticleCreated'), duration: 2000 });

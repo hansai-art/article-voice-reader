@@ -354,10 +354,11 @@ const PlayerPage = () => {
         return t('playerHealthLogError');
     }
   };
-  const formatPlaybackLogTime = (ts: number) => new Date(ts).toLocaleTimeString(
-    lang === 'zh-TW' ? 'zh-TW' : 'en-US',
+  const playbackLogLocale = lang === 'zh-TW' ? 'zh-TW' : 'en-US';
+  const formatPlaybackLogTime = useCallback((ts: number) => new Date(ts).toLocaleTimeString(
+    playbackLogLocale,
     { hour: '2-digit', minute: '2-digit' }
-  );
+  ), [playbackLogLocale]);
 
   const handleReplaySentence = () => {
     replayCurrentSentence();

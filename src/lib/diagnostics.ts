@@ -125,7 +125,7 @@ export function detectDevice(): DeviceInfo {
     if (AudioContextCtor) {
       const ctx = new AudioContextCtor();
       audioContext = true;
-      void ctx.close();
+      void ctx.close().catch(() => {});
     }
   } catch { /* */ }
 
