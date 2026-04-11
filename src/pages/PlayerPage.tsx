@@ -26,7 +26,7 @@ import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { toast } from '@/hooks/use-toast';
 import { getPublicArticleById } from '@/lib/supabase';
 import { uploadArticle } from '@/lib/auto-sync';
-import { DIAG_UPDATED_EVENT, getDiagData, getPlaybackErrorCount, getPlaybackSkipCount, getPlaybackStatus, getTTSLimits } from '@/lib/diagnostics';
+import { clearDiagLogs, DIAG_UPDATED_EVENT, getDiagData, getPlaybackErrorCount, getPlaybackSkipCount, getPlaybackStatus, getTTSLimits } from '@/lib/diagnostics';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0];
 const SLEEP_OPTIONS = [0, 15, 30, 45, 60, 90];
@@ -127,7 +127,7 @@ const PlayerPage = () => {
   const {
     isPlaying, paragraphIndex, sentenceIndex, paragraphs, progressPercent,
     voices, selectedVoice, setSelectedVoice, speed, changeSpeed,
-    togglePlay, skipForward, skipBackward, seekToParagraph, pause,
+    togglePlay, replayCurrentSentence, skipCurrentSentence, skipForward, skipBackward, seekToParagraph, pause,
     engineType, switchEngine, openaiVoice, changeOpenAIVoice, openaiVoices, setOnFinished,
   } = useTTS(article);
 
@@ -333,6 +333,22 @@ const PlayerPage = () => {
     : hasOpenAIAccess
       ? t('playerHealthOpenaiUpgrade')
       : t('playerHealthBrowserOnly');
+  const showRecoveryActions = !isPublicView && (playbackErrorCount > 0 || paragraphIndex > 0 || sentenceIndex > 0 || isPlaying);
+
+  const handleReplaySentence = () => {
+    replayCurrentSentence();
+    toast({ title: t('playerHealthReplayStarted'), duration: 1500 });
+  };
+
+  const handleSkipSentence = () => {
+    skipCurrentSentence();
+    toast({ title: t('playerHealthSkipDone'), duration: 1500 });
+  };
+
+  const handleClearDiagnostics = () => {
+    clearDiagLogs();
+    toast({ title: t('playerHealthLogsCleared'), duration: 1500 });
+  };
 
   if (!article) return null;
 
@@ -443,6 +459,27 @@ const PlayerPage = () => {
               .replace('{max}', String(diagTtsLimits.maxUtteranceLength))}
           </p>
           <p className="text-xs text-muted-foreground leading-relaxed">{playbackEngineMessage}</p>
+
+          {showRecoveryActions && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">{t('playerHealthRecoveryTitle')}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" className="gap-2" onClick={handleReplaySentence}>
+                  <Play className="h-4 w-4" />
+                  {t('playerHealthReplaySentence')}
+                </Button>
+                <Button size="sm" variant="outline" className="gap-2" onClick={handleSkipSentence}>
+                  <SkipForward className="h-4 w-4" />
+                  {t('playerHealthSkipSentence')}
+                </Button>
+                {playbackErrorCount > 0 && (
+                  <Button size="sm" variant="ghost" className="gap-2" onClick={handleClearDiagnostics}>
+                    {t('playerHealthClearLogs')}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
 
           {!isPublicView && (
             <div className="flex flex-wrap gap-2">

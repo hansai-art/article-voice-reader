@@ -300,6 +300,44 @@ export function useTTS(article: Article | null) {
     else play();
   }, [isPlaying, play, pause]);
 
+  const replayCurrentSentence = useCallback(() => {
+    retryCountRef.current = 0;
+    getEngine().stop();
+    if (!playingRef.current) {
+      setIsPlaying(true);
+      playingRef.current = true;
+      if (playStartTimeRef.current === 0) {
+        playStartTimeRef.current = Date.now();
+      }
+    }
+    setSentenceIndex(sentenceIndex);
+    saveProgress(paragraphIndex, sentenceIndex);
+    speakSentence(paragraphIndex, sentenceIndex);
+  }, [paragraphIndex, sentenceIndex, saveProgress, speakSentence, getEngine]);
+
+  const skipCurrentSentence = useCallback(() => {
+    const sentences = paragraphIndex < paragraphs.length
+      ? splitIntoSentences(paragraphs[paragraphIndex], ttsLimits.current.maxUtteranceLength)
+      : [];
+    let nextParagraphIndex = paragraphIndex;
+    let nextSentenceIndex = sentenceIndex + 1;
+
+    if (nextSentenceIndex >= sentences.length) {
+      nextParagraphIndex = paragraphIndex + 1;
+      nextSentenceIndex = 0;
+    }
+
+    getEngine().stop();
+    retryCountRef.current = 0;
+    setParagraphIndex(nextParagraphIndex);
+    setSentenceIndex(nextSentenceIndex);
+    saveProgress(nextParagraphIndex, nextSentenceIndex);
+
+    if (playingRef.current) {
+      speakSentence(nextParagraphIndex, nextSentenceIndex);
+    }
+  }, [paragraphIndex, sentenceIndex, paragraphs, saveProgress, speakSentence, getEngine]);
+
   const skipForward = useCallback(() => {
     const nextP = Math.min(paragraphIndex + 1, paragraphs.length - 1);
     getEngine().stop();
@@ -452,6 +490,8 @@ export function useTTS(article: Article | null) {
     speed,
     changeSpeed,
     togglePlay,
+    replayCurrentSentence,
+    skipCurrentSentence,
     skipForward,
     skipBackward,
     seekToParagraph,
