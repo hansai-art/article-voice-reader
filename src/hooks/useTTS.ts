@@ -274,6 +274,11 @@ export function useTTS(article: Article | null) {
     [speed, selectedVoice, saveProgress, getEngine, prefetchNext]
   );
 
+  /**
+   * Normalizes playback startup for both fresh play and sentence replay.
+   * `restartTimer` is true for a brand-new play request, but false when replaying
+   * the current sentence so existing listening-time tracking can continue.
+   */
   const startPlaybackSession = useCallback((restartTimer = false) => {
     retryCountRef.current = 0;
     if (!playingRef.current) {
