@@ -612,7 +612,7 @@ const SettingsPage = () => {
             setDiagRefreshKey((current) => current + 1);
             toast({ title: t('diagnosticsLogsCleared'), duration: 1500 });
           }}>
-            {t('playerHealthClearLogs')}
+            {t('diagnosticsClearLogs')}
           </Button>
         </Card>
       </main>
