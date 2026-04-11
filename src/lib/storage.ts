@@ -111,18 +111,19 @@ export function setReadingTheme(theme: ReadingTheme) {
   localStorage.setItem(READING_THEME_KEY, theme);
 }
 
-// API Key storage
-const API_KEY_KEY = 'article-reader-api-key';
+// API key is intentionally kept in memory only to avoid clear-text browser persistence.
+// This limits the key to the current page session, but does not change XSS exposure.
+let sessionApiKey = '';
 const API_PROVIDER_KEY = 'article-reader-api-provider';
 
 export type ApiProvider = 'gemini' | 'openai';
 
 export function getApiKey(): string {
-  return localStorage.getItem(API_KEY_KEY) || '';
+  return sessionApiKey;
 }
 
 export function setApiKey(key: string) {
-  localStorage.setItem(API_KEY_KEY, key);
+  sessionApiKey = key;
 }
 
 export function getApiProvider(): ApiProvider {

@@ -9,7 +9,22 @@ const DIAG_KEY = 'article-reader-diagnostics';
 const MAX_LOGS = 200;
 const REPORT_BATCH_KEY = 'article-reader-diag-pending';
 const REPORT_INTERVAL = 60000; // batch upload every 60s
+export const DIAG_UPDATED_EVENT = 'article-reader-diagnostics-updated';
 let reportTimer: ReturnType<typeof setTimeout> | null = null;
+
+type DiagnosticsAudioWindow = Window & {
+  webkitAudioContext?: typeof AudioContext;
+};
+
+export type DiagLogType =
+  | 'tts_error'
+  | 'tts_stall'
+  | 'tts_skip'
+  | 'tts_retry'
+  | 'tts_watchdog'
+  | 'tts_watchdog_exhausted'
+  | 'sync_error'
+  | 'info';
 
 export interface DeviceInfo {
   os: string;
@@ -30,7 +45,7 @@ export interface DeviceInfo {
 
 export interface DiagLog {
   ts: number;
-  type: 'tts_error' | 'tts_stall' | 'tts_skip' | 'tts_retry' | 'tts_watchdog' | 'sync_error' | 'info';
+  type: DiagLogType;
   message: string;
   meta?: Record<string, unknown>;
 }
@@ -46,7 +61,7 @@ export interface DiagData {
 
 function parseOS(ua: string): { os: string; version: string } {
   if (/iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
-    const m = ua.match(/OS (\d+[_\.]\d+[_\.]?\d*)/);
+    const m = ua.match(/OS (\d+[_.]\d+[_.]?\d*)/);
     return { os: 'iOS', version: m ? m[1].replace(/_/g, '.') : 'unknown' };
   }
   if (/Android/.test(ua)) {
@@ -106,9 +121,18 @@ export function detectDevice(): DeviceInfo {
 
   let audioContext = false;
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    audioContext = true;
-    ctx.close();
+    const AudioContextCtor = window.AudioContext || (window as DiagnosticsAudioWindow).webkitAudioContext;
+    if (AudioContextCtor) {
+      const ctx = new AudioContextCtor();
+      audioContext = true;
+      // AudioContext close can fail on some browsers during capability probing; safe to ignore here
+      // because this is not an active playback session.
+      try {
+        void ctx.close().catch(() => {});
+      } catch {
+        // Ignore close failures during diagnostics probing.
+      }
+    }
   } catch { /* */ }
 
   return {
@@ -168,6 +192,34 @@ function saveData(data: DiagData) {
   } catch { /* */ }
 }
 
+function notifyDiagnosticsUpdated() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(DIAG_UPDATED_EVENT));
+  }
+}
+
+export type PlaybackStatus = 'ready' | 'attention' | 'setup';
+
+export function getPlaybackErrorCount(logs: DiagLog[]): number {
+  return logs.filter((log) =>
+    log.type === 'tts_error'
+    || log.type === 'tts_stall'
+    || log.type === 'tts_watchdog'
+    || log.type === 'tts_watchdog_exhausted'
+  ).length;
+}
+
+export function getPlaybackSkipCount(logs: DiagLog[]): number {
+  return logs.filter((log) => log.type === 'tts_skip').length;
+}
+
+export function getPlaybackStatus(device: DeviceInfo, logs: DiagLog[]): PlaybackStatus {
+  if (!device.speechSynthesis) return 'setup';
+  const limits = getTTSLimits(device);
+  if (getPlaybackErrorCount(logs) > 0 || limits.needsUserGesture) return 'attention';
+  return 'ready';
+}
+
 export function diagLog(type: DiagLog['type'], message: string, meta?: Record<string, unknown>) {
   const data = loadData();
   data.device = detectDevice();
@@ -178,6 +230,7 @@ export function diagLog(type: DiagLog['type'], message: string, meta?: Record<st
     data.logs = data.logs.slice(-MAX_LOGS);
   }
   saveData(data);
+  notifyDiagnosticsUpdated();
   // Queue error types for remote reporting
   queueForReport(log);
 }
@@ -192,6 +245,7 @@ export function clearDiagLogs() {
   const data = loadData();
   data.logs = [];
   saveData(data);
+  notifyDiagnosticsUpdated();
 }
 
 // ── Remote error reporting (Supabase) ──
@@ -277,8 +331,8 @@ if (typeof window !== 'undefined') {
 export function getDiagSummary(): string {
   const d = detectDevice();
   const data = getDiagData();
-  const errorCount = data.logs.filter((l) => l.type === 'tts_error' || l.type === 'tts_stall').length;
-  const skipCount = data.logs.filter((l) => l.type === 'tts_skip').length;
+  const errorCount = getPlaybackErrorCount(data.logs);
+  const skipCount = getPlaybackSkipCount(data.logs);
   const limits = getTTSLimits(d);
 
   return [

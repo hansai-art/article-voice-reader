@@ -7,13 +7,27 @@ import { useLanguage } from '@/hooks/useLanguage';
 import { getProfileByUsername, getPublicArticles } from '@/lib/supabase';
 import { formatTimeAgo } from '@/lib/i18n';
 
+interface PublicProfile {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+}
+
+interface PublicArticle {
+  id?: string;
+  article_id?: string;
+  title: string;
+  word_count?: number | null;
+  created_at?: string | null;
+}
+
 const PublicProfilePage = () => {
   const { username } = useParams<{ username: string }>();
   const navigate = useNavigate();
   const { lang, t } = useLanguage();
 
-  const [profile, setProfile] = useState<any>(null);
-  const [articles, setArticles] = useState<any[]>([]);
+  const [profile, setProfile] = useState<PublicProfile | null>(null);
+  const [articles, setArticles] = useState<PublicArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 

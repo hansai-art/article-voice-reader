@@ -7,7 +7,9 @@ import {
   Settings2, Eye, EyeOff, Timer, Palette, Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -16,7 +18,7 @@ import { getArticle, getArticles, saveArticle, Article, getFontSize, setFontSize
 import { useLanguage } from '@/hooks/useLanguage';
 import { useTTS } from '@/hooks/useTTS';
 import { useWakeLock } from '@/hooks/useWakeLock';
-import { estimateReadingTime, extractHeadings, applyBionicReading, splitIntoSentences } from '@/lib/tts';
+import { estimateReadingTime, extractHeadings, applyBionicReading, splitIntoSentences, OpenAIVoice } from '@/lib/tts';
 import { generateSummary, SummaryResult } from '@/lib/ai-summary';
 import { exportToMp3, getExportVoices, ExportVoice } from '@/lib/mp3-export';
 import { getApiKey, getApiProvider } from '@/lib/storage';
@@ -24,16 +26,25 @@ import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { toast } from '@/hooks/use-toast';
 import { getPublicArticleById } from '@/lib/supabase';
 import { uploadArticle } from '@/lib/auto-sync';
+import { clearDiagLogs, DIAG_UPDATED_EVENT, getDiagData, getPlaybackErrorCount, getPlaybackSkipCount, getPlaybackStatus, getTTSLimits } from '@/lib/diagnostics';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0];
 const SLEEP_OPTIONS = [0, 15, 30, 45, 60, 90];
 const FONT_MIN = 14;
 const FONT_MAX = 24;
+const MEDIA_SESSION_ACTIONS = ['play', 'pause', 'previoustrack', 'nexttrack'] as const;
+const READING_THEMES = [
+  { value: 'default', labelKey: 'themeDefault' },
+  { value: 'sepia', labelKey: 'themeSepia' },
+  { value: 'cream', labelKey: 'themeCream' },
+  { value: 'dark', labelKey: 'themeDark' },
+  { value: 'amoled', labelKey: 'themeAmoled' },
+] as const satisfies Array<{ value: ReadingTheme; labelKey: 'themeDefault' | 'themeSepia' | 'themeCream' | 'themeDark' | 'themeAmoled' }>;
 
 const PlayerPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { t } = useLanguage();
+  const { lang, t } = useLanguage();
   const [article, setArticle] = useState<Article | null>(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -56,9 +67,20 @@ const PlayerPage = () => {
   const [readingTheme, setReadingThemeState] = useState<ReadingTheme>(() => getReadingTheme());
   const [rsvpMode, setRsvpMode] = useState(false);
   const [isPublicView, setIsPublicView] = useState(false);
+  const [diagData, setDiagData] = useState(() => getDiagData());
   const sleepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const paragraphRefs = useRef<(HTMLDivElement | null)[]>([]);
   const wakeLock = useWakeLock();
+  const diagTtsLimits = useMemo(() => getTTSLimits(diagData.device), [diagData.device]);
+  const playbackErrorCount = useMemo(() => getPlaybackErrorCount(diagData.logs), [diagData.logs]);
+  const playbackSkipCount = useMemo(() => getPlaybackSkipCount(diagData.logs), [diagData.logs]);
+  const playbackStatus = useMemo(() => getPlaybackStatus(diagData.device, diagData.logs), [diagData.device, diagData.logs]);
+  const playbackStatusVariant = {
+    ready: 'default',
+    attention: 'secondary',
+    setup: 'outline',
+  } as const;
+  const hasOpenAIAccess = getApiKey().trim().length > 0 && getApiProvider() === 'openai';
 
   useEffect(() => {
     if (!id) return;
@@ -87,12 +109,25 @@ const PlayerPage = () => {
         }
       });
     }
-  }, [id]);
+  }, [id, navigate]);
+
+  useEffect(() => {
+    const refreshDiagnostics = () => setDiagData(getDiagData());
+    refreshDiagnostics();
+    window.addEventListener(DIAG_UPDATED_EVENT, refreshDiagnostics);
+    window.addEventListener('focus', refreshDiagnostics);
+    document.addEventListener('visibilitychange', refreshDiagnostics);
+    return () => {
+      window.removeEventListener(DIAG_UPDATED_EVENT, refreshDiagnostics);
+      window.removeEventListener('focus', refreshDiagnostics);
+      document.removeEventListener('visibilitychange', refreshDiagnostics);
+    };
+  }, []);
 
   const {
     isPlaying, paragraphIndex, sentenceIndex, paragraphs, progressPercent,
     voices, selectedVoice, setSelectedVoice, speed, changeSpeed,
-    togglePlay, skipForward, skipBackward, seekToParagraph, pause,
+    togglePlay, replayCurrentSentence, skipCurrentSentence, skipForward, skipBackward, seekToParagraph, pause,
     engineType, switchEngine, openaiVoice, changeOpenAIVoice, openaiVoices, setOnFinished,
   } = useTTS(article);
 
@@ -121,14 +156,21 @@ const PlayerPage = () => {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: article.title, artist: '語音朗讀器', album: `${article.wordCount} 字`,
     });
-    navigator.mediaSession.setActionHandler('play', () => togglePlay());
-    navigator.mediaSession.setActionHandler('pause', () => togglePlay());
-    navigator.mediaSession.setActionHandler('previoustrack', () => skipBackward());
-    navigator.mediaSession.setActionHandler('nexttrack', () => skipForward());
+    try {
+      navigator.mediaSession.setActionHandler('play', () => togglePlay());
+      navigator.mediaSession.setActionHandler('pause', () => togglePlay());
+      navigator.mediaSession.setActionHandler('previoustrack', () => skipBackward());
+      navigator.mediaSession.setActionHandler('nexttrack', () => skipForward());
+    } catch (error) {
+      console.warn('[MediaSession] Failed to register handlers', error);
+      return;
+    }
     return () => {
-      ['play', 'pause', 'previoustrack', 'nexttrack'].forEach((a) =>
-        navigator.mediaSession.setActionHandler(a as any, null)
-      );
+      try {
+        MEDIA_SESSION_ACTIONS.forEach((action) => navigator.mediaSession.setActionHandler(action, null));
+      } catch (error) {
+        console.warn('[MediaSession] Failed to clear handlers during cleanup', error);
+      }
     };
   }, [article, togglePlay, skipForward, skipBackward]);
 
@@ -209,7 +251,8 @@ const PlayerPage = () => {
   // Bookmarks
   const toggleBookmark = (idx: number) => {
     const next = new Set(bookmarks);
-    next.has(idx) ? next.delete(idx) : next.add(idx);
+    if (next.has(idx)) next.delete(idx);
+    else next.add(idx);
     setBookmarks(next);
     if (article) { const u = { ...article, bookmarks: Array.from(next) }; saveArticle(u); uploadArticle(u); setArticle(u); }
     toast({ title: next.has(idx) ? t('bookmarkAdd') : t('bookmarkRemove'), duration: 1500 });
@@ -220,7 +263,8 @@ const PlayerPage = () => {
   const saveNote = () => {
     if (editingNote === null || !article) return;
     const u = { ...notes };
-    noteText.trim() ? (u[editingNote] = noteText.trim()) : delete u[editingNote];
+    if (noteText.trim()) u[editingNote] = noteText.trim();
+    else delete u[editingNote];
     setNotes(u);
     const ua = { ...article, notes: u }; saveArticle(ua); uploadArticle(ua); setArticle(ua);
     setEditingNote(null);
@@ -268,6 +312,77 @@ const PlayerPage = () => {
     if (paragraphIndex >= paragraphs.length) return [];
     return splitIntoSentences(paragraphs[paragraphIndex]);
   }, [paragraphs, paragraphIndex]);
+
+  const playbackStatusLabel = useMemo(() => ({
+    ready: t('upgradeStatusReady'),
+    attention: t('upgradeStatusAttention'),
+    setup: t('upgradeStatusSetup'),
+  } as const), [t]);
+  const recentPlaybackLogs = useMemo(
+    () => diagData.logs
+      .filter((log) => log.type.startsWith('tts'))
+      .slice(-3)
+      .reverse(),
+    [diagData.logs]
+  );
+  const playbackSessionLabel = isPlaying
+    ? t('playerHealthStatePlaying')
+    : paragraphIndex > 0 || sentenceIndex > 0
+      ? t('playerHealthStatePaused')
+      : t('playerHealthStateReady');
+  const playbackCompatibilityMessage = !diagData.device.speechSynthesis
+    ? t('playerHealthNoSpeech')
+    : playbackErrorCount > 0
+      ? t('playerHealthRecentIssues')
+          .replace('{count}', String(playbackErrorCount))
+          .replace('{skipCount}', String(playbackSkipCount))
+      : diagTtsLimits.needsUserGesture
+        ? t('playerHealthGesture')
+        : diagTtsLimits.resumeWorkaround
+          ? t('playerHealthResumeProtection')
+              .replace('{browser}', diagData.device.browser || 'Browser')
+          : t('playerHealthStable')
+              .replace('{browser}', diagData.device.browser || 'Browser')
+              .replace('{os}', diagData.device.os || 'Device');
+  const playbackEngineMessage = engineType === 'openai'
+    ? t('playerHealthOpenaiActive')
+    : hasOpenAIAccess
+      ? t('playerHealthOpenaiUpgrade')
+      : t('playerHealthBrowserOnly');
+  const showRecoveryActions = !isPublicView && (playbackErrorCount > 0 || paragraphIndex > 0 || sentenceIndex > 0 || isPlaying);
+  const getPlaybackLogLabel = (type: string) => {
+    switch (type) {
+      case 'tts_retry':
+        return t('playerHealthLogRetry');
+      case 'tts_skip':
+        return t('playerHealthLogSkip');
+      case 'tts_watchdog':
+      case 'tts_watchdog_exhausted':
+        return t('playerHealthLogWatchdog');
+      default:
+        return t('playerHealthLogError');
+    }
+  };
+  const playbackLogLocale = useMemo(() => (lang === 'zh-TW' ? 'zh-TW' : 'en-US'), [lang]);
+  const formatPlaybackLogTime = useCallback((ts: number) => new Date(ts).toLocaleTimeString(
+    playbackLogLocale,
+    { hour: '2-digit', minute: '2-digit' }
+  ), [playbackLogLocale]);
+
+  const handleReplaySentence = () => {
+    replayCurrentSentence();
+    toast({ title: t('playerHealthReplayStarted'), duration: 1500 });
+  };
+
+  const handleSkipSentence = () => {
+    skipCurrentSentence();
+    toast({ title: t('playerHealthSkipDone'), duration: 1500 });
+  };
+
+  const handleClearDiagnostics = () => {
+    clearDiagLogs();
+    toast({ title: t('playerHealthLogsCleared'), duration: 1500 });
+  };
 
   if (!article) return null;
 
@@ -346,6 +461,95 @@ const PlayerPage = () => {
           )}
         </div>
       </header>
+
+      <div className="max-w-lg mx-auto px-6 mt-3">
+        <Card className="p-4 space-y-3 border-primary/15">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <h2 className="text-sm font-semibold">{t('playerHealthTitle')}</h2>
+              <p className="text-xs text-muted-foreground">{t('playerHealthHint')}</p>
+            </div>
+            <Badge variant={playbackStatusVariant[playbackStatus]}>
+              {playbackStatusLabel[playbackStatus]}
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded-lg bg-muted/50 px-3 py-2">
+              <p className="text-muted-foreground">{t('playerHealthCurrentEngine')}</p>
+              <p className="font-medium mt-1">{engineType === 'openai' ? t('playerHealthAiVoice') : t('playerHealthBrowserVoice')}</p>
+            </div>
+            <div className="rounded-lg bg-muted/50 px-3 py-2">
+              <p className="text-muted-foreground">{t('playerHealthSession')}</p>
+              <p className="font-medium mt-1">{playbackSessionLabel}</p>
+            </div>
+          </div>
+
+          <p className="text-sm text-muted-foreground leading-relaxed">{playbackCompatibilityMessage}</p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {t('playerHealthEnvironment')
+              .replace('{browser}', diagData.device.browser || 'Browser')
+              .replace('{os}', diagData.device.os || 'Device')
+              .replace('{max}', String(diagTtsLimits.maxUtteranceLength))}
+          </p>
+          <p className="text-xs text-muted-foreground leading-relaxed">{playbackEngineMessage}</p>
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">{t('playerHealthRecentLogs')}</p>
+            {recentPlaybackLogs.length === 0 ? (
+              <p className="text-xs text-muted-foreground leading-relaxed">{t('playerHealthNoRecentLogs')}</p>
+            ) : (
+              <div className="space-y-2">
+                {recentPlaybackLogs.map((log) => (
+                  <div key={`${log.ts}-${log.type}`} className="rounded-lg bg-muted/50 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-medium">{getPlaybackLogLabel(log.type)}</p>
+                      <p className="text-[10px] text-muted-foreground">{formatPlaybackLogTime(log.ts)}</p>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground break-words">{log.message}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {showRecoveryActions && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">{t('playerHealthRecoveryTitle')}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" className="gap-2" onClick={handleReplaySentence}>
+                  <Play className="h-4 w-4" />
+                  {t('playerHealthReplaySentence')}
+                </Button>
+                <Button size="sm" variant="outline" className="gap-2" onClick={handleSkipSentence}>
+                  <SkipForward className="h-4 w-4" />
+                  {t('playerHealthSkipSentence')}
+                </Button>
+                {playbackErrorCount > 0 && (
+                  <Button size="sm" variant="ghost" className="gap-2" onClick={handleClearDiagnostics}>
+                    {t('playerHealthClearLogs')}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!isPublicView && (
+            <div className="flex flex-wrap gap-2">
+              {hasOpenAIAccess && engineType !== 'openai' && (
+                <Button size="sm" className="gap-2" onClick={() => switchEngine('openai')}>
+                  <Bot className="h-4 w-4" />
+                  {t('playerHealthSwitchToAi')}
+                </Button>
+              )}
+              <Button size="sm" variant="outline" className="gap-2" onClick={() => navigate('/settings')}>
+                <Settings2 className="h-4 w-4" />
+                {t('playerHealthOpenSettings')}
+              </Button>
+            </div>
+          )}
+        </Card>
+      </div>
 
       {/* AI Summary */}
       <div className="max-w-lg mx-auto px-6 mt-3">
@@ -483,7 +687,7 @@ const PlayerPage = () => {
             {/* Voice pill */}
             <div className="w-16">
               {engineType === 'openai' ? (
-                <Select value={openaiVoice} onValueChange={(v) => changeOpenAIVoice(v as any)}>
+                <Select value={openaiVoice} onValueChange={(v) => changeOpenAIVoice(v as OpenAIVoice)}>
                   <SelectTrigger className="h-10 text-xs font-medium rounded-full border-0 bg-muted/50"><SelectValue /></SelectTrigger>
                   <SelectContent>{openaiVoices.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
                 </Select>
@@ -533,14 +737,14 @@ const PlayerPage = () => {
                     </PopoverTrigger>
                     <PopoverContent className="w-36 p-2" align="start">
                       <p className="text-xs font-medium px-2 py-1 text-muted-foreground">{t('readingTheme')}</p>
-                      {(['default', 'sepia', 'cream', 'dark', 'amoled'] as ReadingTheme[]).map((th) => (
-                        <Button key={th} variant={readingTheme === th ? 'secondary' : 'ghost'}
+                      {READING_THEMES.map(({ value, labelKey }) => (
+                        <Button key={value} variant={readingTheme === value ? 'secondary' : 'ghost'}
                           className="w-full justify-start text-sm h-7"
-                          onClick={() => { setReadingThemeState(th); saveReadingTheme(th); }}>
+                          onClick={() => { setReadingThemeState(value); saveReadingTheme(value); }}>
                           <span className={`inline-block w-3 h-3 rounded-full mr-2 border ${
-                            th === 'default' ? 'bg-background' : th === 'sepia' ? 'bg-[#f4ecd8]' : th === 'cream' ? 'bg-[#fdf6e3]' : th === 'dark' ? 'bg-[#1a1a2e]' : 'bg-black'
+                            value === 'default' ? 'bg-background' : value === 'sepia' ? 'bg-[#f4ecd8]' : value === 'cream' ? 'bg-[#fdf6e3]' : value === 'dark' ? 'bg-[#1a1a2e]' : 'bg-black'
                           }`} />
-                          {t(`theme${th.charAt(0).toUpperCase() + th.slice(1)}` as any)}
+                          {t(labelKey)}
                         </Button>
                       ))}
                     </PopoverContent>

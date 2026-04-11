@@ -1,6 +1,16 @@
 import { getSupabase, getUser } from './supabase';
 import { Article, getArticles, saveArticle } from './storage';
 
+type RemoteArticleRow = ReturnType<typeof toRemote> & {
+  id: string;
+  last_played_at?: number | null;
+  created_at?: number | null;
+  paragraph_index?: number | null;
+  sentence_offset?: number | null;
+  speed?: number | null;
+  voice_uri?: string | null;
+};
+
 export interface SyncResult {
   uploaded: number;
   downloaded: number;
@@ -27,7 +37,8 @@ export async function syncArticles(): Promise<SyncResult> {
 
   if (error) throw error;
 
-  const remoteMap = new Map((remote || []).map((a: any) => [a.article_id, a]));
+  const remoteRows = (remote ?? []) as RemoteArticleRow[];
+  const remoteMap = new Map(remoteRows.map((article) => [article.article_id, article]));
 
   let uploaded = 0;
   let downloaded = 0;
@@ -89,7 +100,7 @@ function toRemote(article: Article, userId: string) {
   };
 }
 
-function fromRemote(row: any): Article {
+function fromRemote(row: RemoteArticleRow): Article {
   return {
     id: row.article_id,
     title: row.title,

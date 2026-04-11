@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   WebSpeechTTS, OpenAITTS, splitIntoParagraphs, splitIntoSentences,
   TTSEngine, OpenAIVoice, getOpenAIVoices, detectLanguage,
@@ -14,6 +14,7 @@ import { uploadProgressDebounced } from '@/lib/auto-sync';
 import { detectDevice, getTTSLimits, diagLog } from '@/lib/diagnostics';
 
 const MAX_RETRIES = 2;
+const VOICE_CHANGE_DELAY_MS = 100;
 
 /** Filter to zh + en only, sort: zh-TW first, then other zh, then en */
 function filterAndSortVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice[] {
@@ -46,17 +47,24 @@ export function useTTS(article: Article | null) {
   const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
   const [speed, setSpeed] = useState(() => getGlobalSpeed());
   const articleRef = useRef(article);
+  const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const playingRef = useRef(false);
   const retryCountRef = useRef(0);
   const onFinishedRef = useRef<(() => void) | null>(null);
   const playStartTimeRef = useRef<number>(0);
   const engineTypeRef = useRef(engineType);
+  const paragraphIndexRef = useRef(0);
+  const sentenceIndexRef = useRef(0);
+  const speakSentenceRef = useRef<(pIdx: number, sIdx: number) => void>(() => {});
 
   // Device-aware TTS limits
   const deviceRef = useRef(detectDevice());
   const ttsLimits = useRef(getTTSLimits(deviceRef.current));
 
-  const paragraphs = article ? splitIntoParagraphs(article.content) : [];
+  const paragraphs = useMemo(
+    () => (article ? splitIntoParagraphs(article.content) : []),
+    [article]
+  );
   const paragraphsRef = useRef(paragraphs);
   paragraphsRef.current = paragraphs;
 
@@ -97,15 +105,27 @@ export function useTTS(article: Article | null) {
     articleRef.current = article;
   }, [article]);
 
+  useEffect(() => {
+    selectedVoiceRef.current = selectedVoice;
+  }, [selectedVoice]);
+
+  useEffect(() => {
+    paragraphIndexRef.current = paragraphIndex;
+  }, [paragraphIndex]);
+
+  useEffect(() => {
+    sentenceIndexRef.current = sentenceIndex;
+  }, [sentenceIndex]);
+
   // Load voices (sorted: zh-TW first)
   useEffect(() => {
     const loadVoices = () => {
       const raw = webTTSRef.current.getVoices();
       const sorted = filterAndSortVoices(raw);
       setVoices(sorted);
-      if (!selectedVoice && sorted.length > 0) {
+      if (!selectedVoiceRef.current && sorted.length > 0) {
         // Auto-detect language from article content and pick matching voice
-        const lang = article ? detectLanguage(article.content) : 'zh';
+        const lang = articleRef.current ? detectLanguage(articleRef.current.content) : 'zh';
         let preferred: SpeechSynthesisVoice | undefined;
         if (lang === 'en') {
           preferred = sorted.find((v) => v.lang.startsWith('en'));
@@ -132,7 +152,7 @@ export function useTTS(article: Article | null) {
         if (v) setSelectedVoice(v);
       }
     }
-  }, [article?.id]);
+  }, [article]);
 
   const saveProgress = useCallback(
     (pIdx: number, sIdx: number) => {
@@ -274,13 +294,30 @@ export function useTTS(article: Article | null) {
     [speed, selectedVoice, saveProgress, getEngine, prefetchNext]
   );
 
-  const play = useCallback(() => {
-    setIsPlaying(true);
-    playingRef.current = true;
+  useEffect(() => {
+    speakSentenceRef.current = speakSentence;
+  }, [speakSentence]);
+
+  /**
+   * Normalizes playback startup for both fresh play and sentence replay.
+   * `restartTimer` is true for a brand-new play request, but false when replaying
+   * the current sentence so existing listening-time tracking can continue.
+   */
+  const startPlaybackSession = useCallback((restartTimer = false) => {
     retryCountRef.current = 0;
-    playStartTimeRef.current = Date.now();
+    if (!playingRef.current) {
+      setIsPlaying(true);
+      playingRef.current = true;
+    }
+    if (restartTimer || playStartTimeRef.current === 0) {
+      playStartTimeRef.current = Date.now();
+    }
+  }, []);
+
+  const play = useCallback(() => {
+    startPlaybackSession(true);
     speakSentence(paragraphIndex, sentenceIndex);
-  }, [paragraphIndex, sentenceIndex, speakSentence]);
+  }, [paragraphIndex, sentenceIndex, speakSentence, startPlaybackSession]);
 
   const pause = useCallback(() => {
     setIsPlaying(false);
@@ -299,6 +336,36 @@ export function useTTS(article: Article | null) {
     if (isPlaying) pause();
     else play();
   }, [isPlaying, play, pause]);
+
+  const replayCurrentSentence = useCallback(() => {
+    getEngine().stop();
+    startPlaybackSession();
+    saveProgress(paragraphIndex, sentenceIndex);
+    speakSentence(paragraphIndex, sentenceIndex);
+  }, [paragraphIndex, sentenceIndex, saveProgress, speakSentence, getEngine, startPlaybackSession]);
+
+  const skipCurrentSentence = useCallback(() => {
+    const sentences = paragraphIndex < paragraphs.length
+      ? splitIntoSentences(paragraphs[paragraphIndex], ttsLimits.current.maxUtteranceLength)
+      : [];
+    let nextParagraphIndex = paragraphIndex;
+    let nextSentenceIndex = sentenceIndex + 1;
+
+    if (nextSentenceIndex >= sentences.length) {
+      nextParagraphIndex = paragraphIndex + 1;
+      nextSentenceIndex = 0;
+    }
+
+    getEngine().stop();
+    retryCountRef.current = 0;
+    setParagraphIndex(nextParagraphIndex);
+    setSentenceIndex(nextSentenceIndex);
+    saveProgress(nextParagraphIndex, nextSentenceIndex);
+
+    if (playingRef.current) {
+      speakSentence(nextParagraphIndex, nextSentenceIndex);
+    }
+  }, [paragraphIndex, sentenceIndex, paragraphs, saveProgress, speakSentence, getEngine]);
 
   const skipForward = useCallback(() => {
     const nextP = Math.min(paragraphIndex + 1, paragraphs.length - 1);
@@ -421,19 +488,30 @@ export function useTTS(article: Article | null) {
 
   // Re-speak when voice changes during playback (speed is handled in changeSpeed)
   useEffect(() => {
-    if (isPlaying && playingRef.current) {
-      getEngine().stop();
-      setTimeout(() => {
-        if (playingRef.current) speakSentence(paragraphIndex, sentenceIndex);
-      }, 100);
-    }
-  }, [selectedVoice]);
+    if (!playingRef.current) return;
+
+    const engine = getEngine();
+    engine.stop();
+    const currentParagraphIndex = paragraphIndexRef.current;
+    const currentSentenceIndex = sentenceIndexRef.current;
+
+    // Give the previous utterance a brief moment to fully stop before replaying
+    // with the newly selected voice.
+    setTimeout(() => {
+      if (playingRef.current) {
+        speakSentenceRef.current(currentParagraphIndex, currentSentenceIndex);
+      }
+    }, VOICE_CHANGE_DELAY_MS);
+  }, [selectedVoice, getEngine]);
 
   // Cleanup
   useEffect(() => {
+    const webTTS = webTTSRef.current;
+    const openaiTTS = openaiTTSRef.current;
+
     return () => {
-      webTTSRef.current.stop();
-      openaiTTSRef.current?.stop();
+      webTTS.stop();
+      openaiTTS?.stop();
     };
   }, []);
 
@@ -452,6 +530,8 @@ export function useTTS(article: Article | null) {
     speed,
     changeSpeed,
     togglePlay,
+    replayCurrentSentence,
+    skipCurrentSentence,
     skipForward,
     skipBackward,
     seekToParagraph,

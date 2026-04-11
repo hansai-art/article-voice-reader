@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, Key, Cloud, Loader2, LogOut, UserPlus, ChevronDown, ChevronUp, User2, Copy, Check } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -10,6 +11,7 @@ import {
   getApiKey, setApiKey as saveApiKey,
   getApiProvider, setApiProvider as saveApiProvider,
   ApiProvider,
+  getArticles,
 } from '@/lib/storage';
 import {
   getSupabaseConfig, setSupabaseConfig,
@@ -19,7 +21,16 @@ import {
 import { syncArticles } from '@/lib/sync';
 import { toast } from '@/hooks/use-toast';
 import type { User } from '@supabase/supabase-js';
-import { getDiagSummary, getDiagData, clearDiagLogs } from '@/lib/diagnostics';
+import { DIAG_UPDATED_EVENT, getDiagSummary, getDiagData, clearDiagLogs, getPlaybackErrorCount, getPlaybackStatus } from '@/lib/diagnostics';
+
+const READY_POINTS = 25;
+const ATTENTION_POINTS = 15;
+const SETUP_POINTS = 0;
+const STATUS_POINTS = {
+  ready: READY_POINTS,
+  attention: ATTENTION_POINTS,
+  setup: SETUP_POINTS,
+} as const;
 
 const SettingsPage = () => {
   const navigate = useNavigate();
@@ -50,6 +61,80 @@ const SettingsPage = () => {
   const [profileDisplayName, setProfileDisplayName] = useState('');
   const [profileLoading, setProfileLoading] = useState(false);
   const [urlCopied, setUrlCopied] = useState(false);
+  const [diagRefreshKey, setDiagRefreshKey] = useState(0);
+  const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
+  const [diagData, setDiagData] = useState(() => getDiagData());
+  const [diagSummary, setDiagSummary] = useState(() => getDiagSummary());
+  const [articleCount, setArticleCount] = useState(0);
+  const hasApiKey = apiKey.trim().length > 0;
+  const playbackErrorCount = useMemo(() => getPlaybackErrorCount(diagData.logs), [diagData.logs]);
+
+  const upgradeItems = useMemo(() => [
+    {
+      label: t('upgradePlaybackTitle'),
+      status: getPlaybackStatus(diagData.device, diagData.logs),
+      detail: !diagData.device.speechSynthesis
+        ? t('upgradePlaybackSetup')
+        : playbackErrorCount > 0
+          ? t('upgradePlaybackAttention')
+              .replace('{count}', String(playbackErrorCount))
+              .replace('{browser}', diagData.device.browser || 'Browser')
+          : t('upgradePlaybackReady')
+              .replace('{browser}', diagData.device.browser || 'Browser')
+              .replace('{os}', diagData.device.os || 'Device'),
+    },
+    {
+      label: t('upgradeAiTitle'),
+      status: !hasApiKey ? 'setup' : provider === 'openai' ? 'ready' : 'attention',
+      detail: !hasApiKey
+        ? t('upgradeAiSetup')
+        : provider === 'openai'
+          ? t('upgradeAiReady')
+          : t('upgradeAiAttention'),
+    },
+    {
+      label: t('upgradeSyncTitle'),
+      status: user ? 'ready' : 'setup',
+      detail: user
+        ? t('upgradeSyncReady')
+        : t('upgradeSyncSetup'),
+    },
+    {
+      label: t('upgradeLibraryTitle'),
+      status: articleCount > 0 ? 'ready' : 'setup',
+      detail: articleCount > 0
+        ? t('upgradeLibraryReady').replace('{count}', String(articleCount))
+        : t('upgradeLibrarySetup'),
+    },
+  ] as const, [articleCount, diagData.device, diagData.logs, playbackErrorCount, provider, t, user, hasApiKey]);
+
+  const readinessScore = useMemo(
+    () => Math.round(
+      upgradeItems.reduce((sum, item) => sum + STATUS_POINTS[item.status], 0)
+    ),
+    [upgradeItems]
+  );
+
+  const nextActions = useMemo(() => [
+    articleCount === 0 ? t('upgradeActionAddFirstArticle') : null,
+    !hasApiKey ? t('upgradeActionAddApiKey') : provider !== 'openai' ? t('upgradeActionSwitchToOpenai') : null,
+    !user ? t('upgradeActionCreateAccount') : null,
+    playbackErrorCount > 0 ? t('upgradeActionReviewDiagnostics') : null,
+  ].filter(Boolean) as string[], [articleCount, hasApiKey, playbackErrorCount, provider, t, user]);
+
+  const statusBadgeVariant = {
+    ready: 'default',
+    attention: 'secondary',
+    setup: 'outline',
+  } as const;
+
+  const statusLabel = {
+    ready: t('upgradeStatusReady'),
+    attention: t('upgradeStatusAttention'),
+    setup: t('upgradeStatusSetup'),
+  } as const;
+
+  const triggerLibraryRefresh = () => setLibraryRefreshKey((current) => current + 1);
 
   useEffect(() => {
     if (isSupabaseConfigured()) {
@@ -67,6 +152,21 @@ const SettingsPage = () => {
     }
   }, []);
 
+  useEffect(() => {
+    const refreshDiagnostics = () => {
+      setDiagData(getDiagData());
+      setDiagSummary(getDiagSummary());
+    };
+
+    refreshDiagnostics();
+    window.addEventListener(DIAG_UPDATED_EVENT, refreshDiagnostics);
+    return () => window.removeEventListener(DIAG_UPDATED_EVENT, refreshDiagnostics);
+  }, [diagRefreshKey]);
+
+  useEffect(() => {
+    setArticleCount(getArticles().length);
+  }, [libraryRefreshKey]);
+
   const handleSaveApiKey = () => {
     saveApiKey(apiKey.trim());
     saveApiProvider(provider);
@@ -82,6 +182,7 @@ const SettingsPage = () => {
     setSyncLoading(true);
     try {
       const result = await syncArticles();
+      triggerLibraryRefresh();
       toast({
         title: t('syncSuccess')
           .replace('{up}', String(result.uploaded))
@@ -132,6 +233,7 @@ const SettingsPage = () => {
         // Auto-sync after registration
         try {
           const result = await syncArticles();
+          triggerLibraryRefresh();
           toast({
             title: t('syncSuccess')
               .replace('{up}', String(result.uploaded))
@@ -149,6 +251,7 @@ const SettingsPage = () => {
         toast({ title: t('loginSuccess') });
         try {
           const result = await syncArticles();
+          triggerLibraryRefresh();
           toast({
             title: t('syncSuccess')
               .replace('{up}', String(result.uploaded))
@@ -176,6 +279,7 @@ const SettingsPage = () => {
       // Auto-sync after login
       try {
         const result = await syncArticles();
+        triggerLibraryRefresh();
         toast({
           title: t('syncSuccess')
             .replace('{up}', String(result.uploaded))
@@ -215,6 +319,45 @@ const SettingsPage = () => {
 
       <main className="max-w-lg mx-auto px-6 mt-6 space-y-6 pb-8">
         {/* Account & Sync — TOP SECTION */}
+        <Card className="p-5 space-y-4 border-primary/20 bg-primary/5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="font-semibold">{t('upgradeChecklistTitle')}</h2>
+              <p className="text-sm text-muted-foreground">{t('upgradeChecklistHint')}</p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-2xl font-bold">{readinessScore}</p>
+              <p className="text-xs text-muted-foreground">{t('upgradeScoreLabel')}</p>
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            {upgradeItems.map((item) => (
+              <div key={item.label} className="rounded-xl border bg-background/90 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">{item.label}</p>
+                  <Badge variant={statusBadgeVariant[item.status]}>{statusLabel[item.status]}</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">{item.detail}</p>
+              </div>
+            ))}
+          </div>
+
+          {nextActions.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{t('upgradeNextActionsTitle')}</p>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                {nextActions.map((action) => (
+                  <li key={action} className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">•</span>
+                    <span>{action}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+
         <Card className="p-5 space-y-4">
           <div className="flex items-center gap-2">
             <Cloud className="h-5 w-5 text-primary" />
@@ -452,23 +595,24 @@ const SettingsPage = () => {
 
         {/* Diagnostics */}
         <Card className="p-5 space-y-3">
-          <h2 className="font-semibold text-muted-foreground">{lang === 'zh-TW' ? '裝置診斷' : 'Device Diagnostics'}</h2>
+          <h2 className="font-semibold text-muted-foreground">{t('diagnosticsTitle')}</h2>
           <pre className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 whitespace-pre-wrap font-mono">
-            {getDiagSummary()}
+            {diagSummary}
           </pre>
           <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => {
             const data = getDiagData();
             const recent = data.logs.slice(-20).reverse();
-            const text = recent.map((l) => `[${new Date(l.ts).toLocaleTimeString()}] ${l.type}: ${l.message}`).join('\n') || (lang === 'zh-TW' ? '（無錯誤記錄）' : '(No error logs)');
-            toast({ title: lang === 'zh-TW' ? '最近 20 筆記錄' : 'Last 20 logs', description: text, duration: 15000 });
+            const text = recent.map((l) => `[${new Date(l.ts).toLocaleTimeString()}] ${l.type}: ${l.message}`).join('\n') || t('diagnosticsNoLogs');
+            toast({ title: t('diagnosticsRecentLogs'), description: text, duration: 15000 });
           }}>
-            {lang === 'zh-TW' ? '查看錯誤記錄' : 'View Error Logs'}
+            {t('diagnosticsViewLogs')}
           </Button>
           <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground" onClick={() => {
             clearDiagLogs();
-            toast({ title: lang === 'zh-TW' ? '已清除記錄' : 'Logs cleared', duration: 1500 });
+            setDiagRefreshKey((current) => current + 1);
+            toast({ title: t('diagnosticsLogsCleared'), duration: 1500 });
           }}>
-            {lang === 'zh-TW' ? '清除記錄' : 'Clear Logs'}
+            {t('diagnosticsClearLogs')}
           </Button>
         </Card>
       </main>
