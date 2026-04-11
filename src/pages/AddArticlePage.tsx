@@ -49,7 +49,7 @@ const AddArticlePage = () => {
         // Clipboard permission denied — that's fine
       }
     })();
-  }, [searchParams]);
+  }, [searchParams, t]);
 
   const wordCount = content.length;
   const readTime = estimateReadingTime(wordCount);

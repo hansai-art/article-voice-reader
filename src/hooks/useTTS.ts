@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   WebSpeechTTS, OpenAITTS, splitIntoParagraphs, splitIntoSentences,
   TTSEngine, OpenAIVoice, getOpenAIVoices, detectLanguage,
@@ -46,17 +46,23 @@ export function useTTS(article: Article | null) {
   const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
   const [speed, setSpeed] = useState(() => getGlobalSpeed());
   const articleRef = useRef(article);
+  const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const playingRef = useRef(false);
   const retryCountRef = useRef(0);
   const onFinishedRef = useRef<(() => void) | null>(null);
   const playStartTimeRef = useRef<number>(0);
   const engineTypeRef = useRef(engineType);
+  const paragraphIndexRef = useRef(0);
+  const sentenceIndexRef = useRef(0);
 
   // Device-aware TTS limits
   const deviceRef = useRef(detectDevice());
   const ttsLimits = useRef(getTTSLimits(deviceRef.current));
 
-  const paragraphs = article ? splitIntoParagraphs(article.content) : [];
+  const paragraphs = useMemo(
+    () => (article ? splitIntoParagraphs(article.content) : []),
+    [article]
+  );
   const paragraphsRef = useRef(paragraphs);
   paragraphsRef.current = paragraphs;
 
@@ -97,15 +103,27 @@ export function useTTS(article: Article | null) {
     articleRef.current = article;
   }, [article]);
 
+  useEffect(() => {
+    selectedVoiceRef.current = selectedVoice;
+  }, [selectedVoice]);
+
+  useEffect(() => {
+    paragraphIndexRef.current = paragraphIndex;
+  }, [paragraphIndex]);
+
+  useEffect(() => {
+    sentenceIndexRef.current = sentenceIndex;
+  }, [sentenceIndex]);
+
   // Load voices (sorted: zh-TW first)
   useEffect(() => {
     const loadVoices = () => {
       const raw = webTTSRef.current.getVoices();
       const sorted = filterAndSortVoices(raw);
       setVoices(sorted);
-      if (!selectedVoice && sorted.length > 0) {
+      if (!selectedVoiceRef.current && sorted.length > 0) {
         // Auto-detect language from article content and pick matching voice
-        const lang = article ? detectLanguage(article.content) : 'zh';
+        const lang = articleRef.current ? detectLanguage(articleRef.current.content) : 'zh';
         let preferred: SpeechSynthesisVoice | undefined;
         if (lang === 'en') {
           preferred = sorted.find((v) => v.lang.startsWith('en'));
@@ -132,7 +150,7 @@ export function useTTS(article: Article | null) {
         if (v) setSelectedVoice(v);
       }
     }
-  }, [article?.id]);
+  }, [article]);
 
   const saveProgress = useCallback(
     (pIdx: number, sIdx: number) => {
@@ -464,19 +482,28 @@ export function useTTS(article: Article | null) {
 
   // Re-speak when voice changes during playback (speed is handled in changeSpeed)
   useEffect(() => {
-    if (isPlaying && playingRef.current) {
-      getEngine().stop();
-      setTimeout(() => {
-        if (playingRef.current) speakSentence(paragraphIndex, sentenceIndex);
-      }, 100);
-    }
-  }, [selectedVoice]);
+    if (!playingRef.current) return;
+
+    const engine = getEngine();
+    engine.stop();
+    const currentParagraphIndex = paragraphIndexRef.current;
+    const currentSentenceIndex = sentenceIndexRef.current;
+
+    setTimeout(() => {
+      if (playingRef.current) {
+        speakSentence(currentParagraphIndex, currentSentenceIndex);
+      }
+    }, 100);
+  }, [selectedVoice, getEngine, speakSentence]);
 
   // Cleanup
   useEffect(() => {
+    const webTTS = webTTSRef.current;
+    const openaiTTS = openaiTTSRef.current;
+
     return () => {
-      webTTSRef.current.stop();
-      openaiTTSRef.current?.stop();
+      webTTS.stop();
+      openaiTTS?.stop();
     };
   }, []);
 

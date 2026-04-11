@@ -156,12 +156,20 @@ const PlayerPage = () => {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: article.title, artist: '語音朗讀器', album: `${article.wordCount} 字`,
     });
-    navigator.mediaSession.setActionHandler('play', () => togglePlay());
-    navigator.mediaSession.setActionHandler('pause', () => togglePlay());
-    navigator.mediaSession.setActionHandler('previoustrack', () => skipBackward());
-    navigator.mediaSession.setActionHandler('nexttrack', () => skipForward());
+    try {
+      navigator.mediaSession.setActionHandler('play', () => togglePlay());
+      navigator.mediaSession.setActionHandler('pause', () => togglePlay());
+      navigator.mediaSession.setActionHandler('previoustrack', () => skipBackward());
+      navigator.mediaSession.setActionHandler('nexttrack', () => skipForward());
+    } catch {
+      return;
+    }
     return () => {
-      MEDIA_SESSION_ACTIONS.forEach((action) => navigator.mediaSession.setActionHandler(action, null));
+      try {
+        MEDIA_SESSION_ACTIONS.forEach((action) => navigator.mediaSession.setActionHandler(action, null));
+      } catch {
+        // Ignore unsupported media session cleanup handlers.
+      }
     };
   }, [article, togglePlay, skipForward, skipBackward]);
 
