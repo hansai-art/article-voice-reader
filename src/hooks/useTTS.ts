@@ -275,12 +275,9 @@ export function useTTS(article: Article | null) {
   );
 
   const play = useCallback(() => {
-    setIsPlaying(true);
-    playingRef.current = true;
-    retryCountRef.current = 0;
-    playStartTimeRef.current = Date.now();
+    startPlaybackSession(true);
     speakSentence(paragraphIndex, sentenceIndex);
-  }, [paragraphIndex, sentenceIndex, speakSentence]);
+  }, [paragraphIndex, sentenceIndex, speakSentence, startPlaybackSession]);
 
   const pause = useCallback(() => {
     setIsPlaying(false);
@@ -300,20 +297,24 @@ export function useTTS(article: Article | null) {
     else play();
   }, [isPlaying, play, pause]);
 
-  const replayCurrentSentence = useCallback(() => {
+  const startPlaybackSession = useCallback((restartTimer = false) => {
     retryCountRef.current = 0;
-    getEngine().stop();
     if (!playingRef.current) {
       setIsPlaying(true);
       playingRef.current = true;
-      if (playStartTimeRef.current === 0) {
-        playStartTimeRef.current = Date.now();
-      }
     }
+    if (restartTimer || playStartTimeRef.current === 0) {
+      playStartTimeRef.current = Date.now();
+    }
+  }, []);
+
+  const replayCurrentSentence = useCallback(() => {
+    getEngine().stop();
+    startPlaybackSession();
     setSentenceIndex(sentenceIndex);
     saveProgress(paragraphIndex, sentenceIndex);
     speakSentence(paragraphIndex, sentenceIndex);
-  }, [paragraphIndex, sentenceIndex, saveProgress, speakSentence, getEngine]);
+  }, [paragraphIndex, sentenceIndex, saveProgress, speakSentence, getEngine, startPlaybackSession]);
 
   const skipCurrentSentence = useCallback(() => {
     const sentences = paragraphIndex < paragraphs.length
