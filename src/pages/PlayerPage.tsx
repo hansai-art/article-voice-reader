@@ -44,7 +44,7 @@ const READING_THEMES = [
 const PlayerPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { t } = useLanguage();
+  const { lang, t } = useLanguage();
   const [article, setArticle] = useState<Article | null>(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -309,6 +309,13 @@ const PlayerPage = () => {
     attention: t('upgradeStatusAttention'),
     setup: t('upgradeStatusSetup'),
   } as const), [t]);
+  const recentPlaybackLogs = useMemo(
+    () => diagData.logs
+      .filter((log) => log.type.startsWith('tts'))
+      .slice(-3)
+      .reverse(),
+    [diagData.logs]
+  );
   const playbackSessionLabel = isPlaying
     ? t('playerHealthStatePlaying')
     : paragraphIndex > 0 || sentenceIndex > 0
@@ -334,6 +341,23 @@ const PlayerPage = () => {
       ? t('playerHealthOpenaiUpgrade')
       : t('playerHealthBrowserOnly');
   const showRecoveryActions = !isPublicView && (playbackErrorCount > 0 || paragraphIndex > 0 || sentenceIndex > 0 || isPlaying);
+  const getPlaybackLogLabel = (type: string) => {
+    switch (type) {
+      case 'tts_retry':
+        return t('playerHealthLogRetry');
+      case 'tts_skip':
+        return t('playerHealthLogSkip');
+      case 'tts_watchdog':
+      case 'tts_watchdog_exhausted':
+        return t('playerHealthLogWatchdog');
+      default:
+        return t('playerHealthLogError');
+    }
+  };
+  const formatPlaybackLogTime = (ts: number) => new Date(ts).toLocaleTimeString(
+    lang === 'zh-TW' ? 'zh-TW' : 'en-US',
+    { hour: '2-digit', minute: '2-digit' }
+  );
 
   const handleReplaySentence = () => {
     replayCurrentSentence();
@@ -459,6 +483,25 @@ const PlayerPage = () => {
               .replace('{max}', String(diagTtsLimits.maxUtteranceLength))}
           </p>
           <p className="text-xs text-muted-foreground leading-relaxed">{playbackEngineMessage}</p>
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">{t('playerHealthRecentLogs')}</p>
+            {recentPlaybackLogs.length === 0 ? (
+              <p className="text-xs text-muted-foreground leading-relaxed">{t('playerHealthNoRecentLogs')}</p>
+            ) : (
+              <div className="space-y-2">
+                {recentPlaybackLogs.map((log) => (
+                  <div key={`${log.ts}-${log.type}`} className="rounded-lg bg-muted/50 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-medium">{getPlaybackLogLabel(log.type)}</p>
+                      <p className="text-[10px] text-muted-foreground">{formatPlaybackLogTime(log.ts)}</p>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground break-words">{log.message}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {showRecoveryActions && (
             <div className="space-y-2">
