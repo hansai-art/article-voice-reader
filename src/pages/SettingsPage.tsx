@@ -21,7 +21,7 @@ import {
 import { syncArticles } from '@/lib/sync';
 import { toast } from '@/hooks/use-toast';
 import type { User } from '@supabase/supabase-js';
-import { getDiagSummary, getDiagData, clearDiagLogs } from '@/lib/diagnostics';
+import { DIAG_UPDATED_EVENT, getDiagSummary, getDiagData, clearDiagLogs, getPlaybackErrorCount, getPlaybackStatus } from '@/lib/diagnostics';
 
 const READY_POINTS = 25;
 const ATTENTION_POINTS = 15;
@@ -67,15 +67,12 @@ const SettingsPage = () => {
   const [diagSummary, setDiagSummary] = useState(() => getDiagSummary());
   const [articleCount, setArticleCount] = useState(0);
   const hasApiKey = apiKey.trim().length > 0;
-  const playbackErrorCount = useMemo(
-    () => diagData.logs.filter((log) => log.type === 'tts_error' || log.type === 'tts_stall').length,
-    [diagData.logs]
-  );
+  const playbackErrorCount = useMemo(() => getPlaybackErrorCount(diagData.logs), [diagData.logs]);
 
   const upgradeItems = useMemo(() => [
     {
       label: t('upgradePlaybackTitle'),
-      status: !diagData.device.speechSynthesis ? 'setup' : playbackErrorCount > 0 ? 'attention' : 'ready',
+      status: getPlaybackStatus(diagData.device, diagData.logs),
       detail: !diagData.device.speechSynthesis
         ? t('upgradePlaybackSetup')
         : playbackErrorCount > 0
@@ -156,8 +153,14 @@ const SettingsPage = () => {
   }, []);
 
   useEffect(() => {
-    setDiagData(getDiagData());
-    setDiagSummary(getDiagSummary());
+    const refreshDiagnostics = () => {
+      setDiagData(getDiagData());
+      setDiagSummary(getDiagSummary());
+    };
+
+    refreshDiagnostics();
+    window.addEventListener(DIAG_UPDATED_EVENT, refreshDiagnostics);
+    return () => window.removeEventListener(DIAG_UPDATED_EVENT, refreshDiagnostics);
   }, [diagRefreshKey]);
 
   useEffect(() => {

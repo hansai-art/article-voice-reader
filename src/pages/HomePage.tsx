@@ -27,8 +27,9 @@ import { formatTimeAgo } from '@/lib/i18n';
 import { toast } from '@/hooks/use-toast';
 import { getUser, toggleArticlePublic } from '@/lib/supabase';
 import { deleteArticleRemote, uploadArticle } from '@/lib/auto-sync';
-import { OnboardingTour, shouldShowOnboarding } from '@/components/OnboardingTour';
-import { getDiagData, getTTSLimits } from '@/lib/diagnostics';
+import { OnboardingTour } from '@/components/OnboardingTour';
+import { shouldShowOnboarding } from '@/lib/onboarding';
+import { DIAG_UPDATED_EVENT, getDiagData, getPlaybackErrorCount, getPlaybackStatus, getTTSLimits } from '@/lib/diagnostics';
 import type { User } from '@supabase/supabase-js';
 
 type SortMode = 'recent' | 'created' | 'progress' | 'title';
@@ -76,10 +77,7 @@ const HomePage = () => {
   const importRef = useRef<HTMLInputElement>(null);
   const [diagData, setDiagData] = useState(() => getDiagData());
   const ttsLimits = useMemo(() => getTTSLimits(diagData.device), [diagData.device]);
-  const playbackErrorCount = useMemo(
-    () => diagData.logs.filter((log) => log.type === 'tts_error' || log.type === 'tts_stall').length,
-    [diagData.logs]
-  );
+  const playbackErrorCount = useMemo(() => getPlaybackErrorCount(diagData.logs), [diagData.logs]);
   const aiConfigured = getApiKey().trim().length > 0;
   const openaiConfigured = aiConfigured && getApiProvider() === 'openai';
 
@@ -95,9 +93,11 @@ const HomePage = () => {
 
   useEffect(() => {
     const refreshDiagnostics = () => setDiagData(getDiagData());
+    window.addEventListener(DIAG_UPDATED_EVENT, refreshDiagnostics);
     window.addEventListener('focus', refreshDiagnostics);
     document.addEventListener('visibilitychange', refreshDiagnostics);
     return () => {
+      window.removeEventListener(DIAG_UPDATED_EVENT, refreshDiagnostics);
       window.removeEventListener('focus', refreshDiagnostics);
       document.removeEventListener('visibilitychange', refreshDiagnostics);
     };
@@ -227,11 +227,7 @@ const HomePage = () => {
     progress: lang === 'zh-TW' ? '進度' : 'Progress',
     title: lang === 'zh-TW' ? '標題' : 'Title',
   };
-  const playbackStatus = !diagData.device.speechSynthesis
-    ? 'setup'
-    : playbackErrorCount > 0 || ttsLimits.needsUserGesture
-      ? 'attention'
-      : 'ready';
+  const playbackStatus = getPlaybackStatus(diagData.device, diagData.logs);
   const playbackStatusLabel = playbackStatus === 'ready'
     ? t('upgradeStatusReady')
     : playbackStatus === 'attention'

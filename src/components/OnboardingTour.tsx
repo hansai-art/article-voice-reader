@@ -3,8 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpen, Plus, Play, Sparkles, Rocket, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/hooks/useLanguage';
-
-const ONBOARDING_KEY = 'onboarding-completed';
+import { completeOnboarding } from '@/lib/onboarding';
 
 const steps = [
   { icon: BookOpen, titleKey: 'onboardingWelcomeTitle' as const, descKey: 'onboardingWelcomeDesc' as const },
@@ -14,21 +13,17 @@ const steps = [
   { icon: Rocket, titleKey: 'onboardingStartTitle' as const, descKey: 'onboardingStartDesc' as const },
 ];
 
-export function shouldShowOnboarding(): boolean {
-  return !localStorage.getItem(ONBOARDING_KEY);
-}
-
 export function OnboardingTour({ onComplete, onTryDemo }: { onComplete: () => void; onTryDemo?: () => void }) {
   const [step, setStep] = useState(0);
   const { t } = useLanguage();
 
   const finish = () => {
-    localStorage.setItem(ONBOARDING_KEY, 'true');
+    completeOnboarding();
     onComplete();
   };
 
   const finishAndTryDemo = () => {
-    localStorage.setItem(ONBOARDING_KEY, 'true');
+    completeOnboarding();
     onTryDemo?.();
     onComplete();
   };
