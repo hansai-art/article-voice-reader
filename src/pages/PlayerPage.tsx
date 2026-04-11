@@ -304,11 +304,11 @@ const PlayerPage = () => {
     return splitIntoSentences(paragraphs[paragraphIndex]);
   }, [paragraphs, paragraphIndex]);
 
-  const playbackStatusLabel = {
+  const playbackStatusLabel = useMemo(() => ({
     ready: t('upgradeStatusReady'),
     attention: t('upgradeStatusAttention'),
     setup: t('upgradeStatusSetup'),
-  } as const;
+  } as const), [t]);
   const playbackSessionLabel = isPlaying
     ? t('playerHealthStatePlaying')
     : paragraphIndex > 0 || sentenceIndex > 0

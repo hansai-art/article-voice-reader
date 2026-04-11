@@ -106,7 +106,7 @@ const SettingsPage = () => {
         ? t('upgradeLibraryReady').replace('{count}', String(articleCount))
         : t('upgradeLibrarySetup'),
     },
-  ] as const, [articleCount, diagData, playbackErrorCount, provider, t, user, hasApiKey]);
+  ] as const, [articleCount, diagData.device, diagData.logs, playbackErrorCount, provider, t, user, hasApiKey]);
 
   const readinessScore = useMemo(
     () => Math.round(

@@ -12,9 +12,19 @@ const REPORT_INTERVAL = 60000; // batch upload every 60s
 export const DIAG_UPDATED_EVENT = 'article-reader-diagnostics-updated';
 let reportTimer: ReturnType<typeof setTimeout> | null = null;
 
-type DiagnosticsAudioWindow = Window & typeof globalThis & {
+type DiagnosticsAudioWindow = Window & {
   webkitAudioContext?: typeof AudioContext;
 };
+
+export type DiagLogType =
+  | 'tts_error'
+  | 'tts_stall'
+  | 'tts_skip'
+  | 'tts_retry'
+  | 'tts_watchdog'
+  | 'tts_watchdog_exhausted'
+  | 'sync_error'
+  | 'info';
 
 export interface DeviceInfo {
   os: string;
@@ -35,7 +45,7 @@ export interface DeviceInfo {
 
 export interface DiagLog {
   ts: number;
-  type: 'tts_error' | 'tts_stall' | 'tts_skip' | 'tts_retry' | 'tts_watchdog' | 'tts_watchdog_exhausted' | 'sync_error' | 'info';
+  type: DiagLogType;
   message: string;
   meta?: Record<string, unknown>;
 }
