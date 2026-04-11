@@ -372,7 +372,7 @@ const translations = {
     aiSettings: 'AI Settings',
     aiSettingsHint: 'Set up API Key to enable AI summary and other features',
     aiProvider: 'AI Provider',
-    apiKeyHint: 'API Key stays only in the current app session, is never uploaded, and must be re-entered after refresh',
+    apiKeyHint: 'API Key stays only in the current app session, is never uploaded, and must be reentered after refresh',
     saveSettings: 'Save Settings',
     settingsSaved: 'Settings saved',
     proFeatures: 'Pro Features',

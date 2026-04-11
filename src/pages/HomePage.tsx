@@ -115,7 +115,7 @@ const HomePage = () => {
     const demo = getDemoArticle(lang);
     const article = createArticle(demo.content, demo.title);
     saveArticle(article);
-    // Best-effort cloud sync for signed-in users: the local demo article should still open immediately.
+    // Best effort cloud sync for signed-in users: the local demo article should still open immediately.
     const syncDemoArticle = async () => {
       if (!currentUser) return;
       const uploaded = await uploadArticle(article);
